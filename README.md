@@ -14,28 +14,32 @@ The installer is idempotent and will:
 - install oh-my-zsh if missing
 - ensure `~/.oh-my-zsh/custom/themes/jodok.zsh-theme` exists
 - install `exports.zsh` to `~/.oh-my-zsh/custom/exports.zsh`
+- install `aliases.zsh` to `~/.oh-my-zsh/custom/aliases.zsh`
 - install `jodok-update.sh` to `~/.oh-my-zsh/custom/jodok-update.sh`
 - patch `~/.zshrc` so it contains:
+  - `export ZSH="$HOME/.oh-my-zsh"`
   - `ZSH_THEME="jodok"`
   - `zstyle ':omz:update' mode auto`
   - `COMPLETION_WAITING_DOTS="true"`
+  - `source $ZSH/oh-my-zsh.sh`
 
 ## Update
 
 ```bash
-~/.oh-my-zsh/custom/jodok-update.sh
+oh-my-jodok
 ```
 
-Or directly:
+Equivalent to:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jodok/dotfiles/main/install.sh | bash
+~/.oh-my-zsh/custom/jodok-update.sh
 ```
 
 ## Layout on target machine
 
 ```text
 ~/.oh-my-zsh/custom/
+  aliases.zsh
   exports.zsh
   jodok-update.sh
   themes/
@@ -51,5 +55,5 @@ Optional local files stay outside git:
 ## Notes
 
 - No daemon, no background updater.
-- No extra custom file sourcing beyond standard oh-my-zsh behavior.
+- Uses standard oh-my-zsh auto-loading for `custom/*.zsh`.
 - Secrets do not belong in this repo.
