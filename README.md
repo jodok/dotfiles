@@ -15,7 +15,7 @@ The installer is idempotent and will:
 - ensure `~/.oh-my-zsh/custom/themes/jodok.zsh-theme` exists
 - install `exports.zsh` to `~/.oh-my-zsh/custom/exports.zsh`
 - install `aliases.zsh` to `~/.oh-my-zsh/custom/aliases.zsh`
-- install `jodok-update.sh` to `~/.oh-my-zsh/custom/jodok-update.sh`
+- install `update.sh` to `~/.oh-my-zsh/custom/update.sh`
 - patch `~/.zshrc` so it contains:
   - `export ZSH="$HOME/.oh-my-zsh"`
   - `ZSH_THEME="jodok"`
@@ -32,7 +32,7 @@ oh-my-jodok
 Equivalent to:
 
 ```bash
-~/.oh-my-zsh/custom/jodok-update.sh
+~/.oh-my-zsh/custom/update.sh
 ```
 
 ## Layout on target machine
@@ -41,7 +41,7 @@ Equivalent to:
 ~/.oh-my-zsh/custom/
   aliases.zsh
   exports.zsh
-  jodok-update.sh
+  update.sh
   themes/
     jodok.zsh-theme
 ```

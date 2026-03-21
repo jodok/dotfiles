@@ -1,1 +1,1 @@
-alias oh-my-jodok='$ZSH/custom/jodok-update.sh'
+alias oh-my-jodok='$ZSH/custom/update.sh'

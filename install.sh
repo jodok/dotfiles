@@ -124,8 +124,8 @@ main() {
   fetch_file "$THEME_URL" "$THEMES_DIR/jodok.zsh-theme"
   fetch_file "$EXPORTS_URL" "$CUSTOM_DIR/exports.zsh"
   fetch_file "$ALIASES_URL" "$CUSTOM_DIR/aliases.zsh"
-  fetch_file "$UPDATE_URL" "$CUSTOM_DIR/jodok-update.sh"
-  chmod +x "$CUSTOM_DIR/jodok-update.sh"
+  fetch_file "$UPDATE_URL" "$CUSTOM_DIR/update.sh"
+  chmod +x "$CUSTOM_DIR/update.sh"
 
   touch "$HOME/.zshrc.local" "$HOME/.zshenv.local"
   patch_zshrc
