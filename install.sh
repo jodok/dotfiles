@@ -1,86 +1,104 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BACKUP_DIR="$HOME/.dotfiles-backups/$(date +%Y%m%d-%H%M%S)"
-ZSH_CUSTOM_DIR="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}"
-THEME_SRC="$DOTFILES_DIR/oh-my-zsh/themes/jodok.zsh-theme"
-THEME_DST_DIR="$ZSH_CUSTOM_DIR/themes"
+REPO_SLUG="${REPO_SLUG:-jodok/dotfiles}"
+BRANCH="${BRANCH:-main}"
+ZSH_DIR="${ZSH:-$HOME/.oh-my-zsh}"
+CUSTOM_DIR="$ZSH_DIR/custom"
+THEMES_DIR="$CUSTOM_DIR/themes"
+INSTALL_DIR="$CUSTOM_DIR/jodok"
+RAW_BASE="https://raw.githubusercontent.com/${REPO_SLUG}/${BRANCH}"
+THEME_URL="$RAW_BASE/oh-my-zsh/themes/jodok.zsh-theme"
+ALIASES_URL="$RAW_BASE/zsh/aliases.zsh"
+EXPORTS_URL="$RAW_BASE/zsh/exports.zsh"
+FUNCTIONS_URL="$RAW_BASE/zsh/functions.zsh"
+PROMPT_URL="$RAW_BASE/zsh/prompt.zsh"
+UPDATE_URL="$RAW_BASE/update.sh"
 
 log() {
   printf '\n[%s] %s\n' "dotfiles" "$*"
 }
 
-backup_if_exists() {
-  local target="$1"
-  if [ -e "$target" ] || [ -L "$target" ]; then
-    mkdir -p "$BACKUP_DIR"
-    cp -a "$target" "$BACKUP_DIR/"
-    log "backed up $target -> $BACKUP_DIR"
-  fi
-}
-
-link_file() {
-  local source="$1"
-  local target="$2"
-  mkdir -p "$(dirname "$target")"
-  backup_if_exists "$target"
-  rm -rf "$target"
-  ln -s "$source" "$target"
-  log "linked $target -> $source"
+require_cmd() {
+  command -v "$1" >/dev/null 2>&1 || {
+    echo "$1 is required but not installed" >&2
+    exit 1
+  }
 }
 
 ensure_oh_my_zsh() {
-  if [ -d "$HOME/.oh-my-zsh" ]; then
+  if [ -d "$ZSH_DIR" ]; then
     log "oh-my-zsh already installed"
     return
   fi
 
-  if ! command -v git >/dev/null 2>&1; then
-    echo "git is required but not installed" >&2
-    exit 1
-  fi
-
-  if ! command -v curl >/dev/null 2>&1; then
-    echo "curl is required but not installed" >&2
-    exit 1
-  fi
+  require_cmd git
+  require_cmd curl
 
   log "installing oh-my-zsh"
   RUNZSH=no CHSH=no KEEP_ZSHRC=yes \
     sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
 }
 
-ensure_local_files() {
-  touch "$HOME/.zshrc.local"
-  touch "$HOME/.zshenv.local"
-  log "ensured local override files"
+fetch_file() {
+  local url="$1"
+  local target="$2"
+  mkdir -p "$(dirname "$target")"
+  curl -fsSL "$url" -o "$target"
 }
 
-install_theme() {
-  mkdir -p "$THEME_DST_DIR"
-  cp "$THEME_SRC" "$THEME_DST_DIR/jodok.zsh-theme"
-  log "installed theme to $THEME_DST_DIR/jodok.zsh-theme"
+patch_or_append() {
+  local file="$1"
+  local pattern="$2"
+  local replacement="$3"
+
+  if grep -Eq "$pattern" "$file"; then
+    perl -0pi -e "s/$pattern/$replacement/mg" "$file"
+  else
+    printf '\n%s\n' "$replacement" >> "$file"
+  fi
+}
+
+ensure_source_line() {
+  local file="$1"
+  local line="$2"
+  grep -Fqx "$line" "$file" || printf '\n%s\n' "$line" >> "$file"
+}
+
+patch_zshrc() {
+  local zshrc="$HOME/.zshrc"
+  touch "$zshrc"
+
+  patch_or_append "$zshrc" '^([[:space:]]*export[[:space:]]+)?ZSH_THEME=.*$' 'ZSH_THEME="jodok"'
+  patch_or_append "$zshrc" "^[[:space:]]*zstyle ':omz:update' mode .*$" "zstyle ':omz:update' mode auto"
+  patch_or_append "$zshrc" '^[[:space:]]*COMPLETION_WAITING_DOTS=.*$' 'COMPLETION_WAITING_DOTS="true"'
+
+  ensure_source_line "$zshrc" '[ -f "$ZSH/custom/jodok/exports.zsh" ] && source "$ZSH/custom/jodok/exports.zsh"'
+  ensure_source_line "$zshrc" '[ -f "$ZSH/custom/jodok/functions.zsh" ] && source "$ZSH/custom/jodok/functions.zsh"'
+  ensure_source_line "$zshrc" '[ -f "$ZSH/custom/jodok/aliases.zsh" ] && source "$ZSH/custom/jodok/aliases.zsh"'
+  ensure_source_line "$zshrc" '[ -f "$ZSH/custom/jodok/prompt.zsh" ] && source "$ZSH/custom/jodok/prompt.zsh"'
+
+  log "patched $zshrc"
 }
 
 main() {
-  log "dotfiles dir: $DOTFILES_DIR"
-
-  if ! command -v zsh >/dev/null 2>&1; then
-    echo "zsh is required but not installed" >&2
-    exit 1
-  fi
+  require_cmd zsh
+  require_cmd curl
 
   ensure_oh_my_zsh
-  install_theme
 
-  link_file "$DOTFILES_DIR/zsh/.zshrc" "$HOME/.zshrc"
-  link_file "$DOTFILES_DIR/zsh/aliases.zsh" "$HOME/.aliases.zsh"
-  link_file "$DOTFILES_DIR/zsh/exports.zsh" "$HOME/.exports.zsh"
-  link_file "$DOTFILES_DIR/zsh/functions.zsh" "$HOME/.functions.zsh"
-  link_file "$DOTFILES_DIR/zsh/prompt.zsh" "$HOME/.prompt.zsh"
+  mkdir -p "$INSTALL_DIR" "$THEMES_DIR"
 
-  ensure_local_files
+  fetch_file "$THEME_URL" "$THEMES_DIR/jodok.zsh-theme"
+  fetch_file "$ALIASES_URL" "$INSTALL_DIR/aliases.zsh"
+  fetch_file "$EXPORTS_URL" "$INSTALL_DIR/exports.zsh"
+  fetch_file "$FUNCTIONS_URL" "$INSTALL_DIR/functions.zsh"
+  fetch_file "$PROMPT_URL" "$INSTALL_DIR/prompt.zsh"
+  fetch_file "$UPDATE_URL" "$INSTALL_DIR/update.sh"
+  chmod +x "$INSTALL_DIR/update.sh"
+
+  touch "$HOME/.zshrc.local" "$HOME/.zshenv.local"
+  patch_zshrc
 
   log "done"
   log "restart your shell or run: source ~/.zshrc"

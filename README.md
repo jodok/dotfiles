@@ -1,73 +1,63 @@
 # jodok/dotfiles
 
-Portable shell setup for macOS and Linux.
-
-## Scope
-
-Step 1 includes:
-- zsh config
-- oh-my-zsh bootstrap
-- custom theme `jodok`
-- aliases, exports, functions split into separate files
-- idempotent installer with backups
-
-Not included yet:
-- Homebrew
-- apt packages
-- host-specific overrides
-
-## Structure
-
-```text
-dotfiles/
-  install.sh
-  zsh/
-    .zshrc
-    aliases.zsh
-    exports.zsh
-    functions.zsh
-    prompt.zsh
-  oh-my-zsh/
-    themes/
-      jodok.zsh-theme
-  bin/
-```
+Portable oh-my-zsh customizations for macOS and Linux.
 
 ## Install
 
 ```bash
-git clone git@github.com:jodok/dotfiles.git ~/dotfiles
-cd ~/dotfiles
-./install.sh
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/jodok/dotfiles/main/install.sh)"
 ```
 
-Or HTTPS:
+## What it does
+
+The installer is idempotent and will:
+- install oh-my-zsh if missing
+- ensure `~/.oh-my-zsh/custom/themes/jodok.zsh-theme` exists
+- install your custom files into `~/.oh-my-zsh/custom/jodok/`
+- patch `~/.zshrc` so it contains:
+  - `ZSH_THEME="jodok"`
+  - `zstyle ':omz:update' mode auto`
+  - `COMPLETION_WAITING_DOTS="true"`
+- add source lines for:
+  - `~/.oh-my-zsh/custom/jodok/exports.zsh`
+  - `~/.oh-my-zsh/custom/jodok/functions.zsh`
+  - `~/.oh-my-zsh/custom/jodok/aliases.zsh`
+  - `~/.oh-my-zsh/custom/jodok/prompt.zsh`
+
+## Update
 
 ```bash
-git clone https://github.com/jodok/dotfiles.git ~/dotfiles
-cd ~/dotfiles
-./install.sh
+~/.oh-my-zsh/custom/jodok/update.sh
 ```
 
-## Behavior
+Or directly:
 
-The installer:
-- installs oh-my-zsh if missing
-- backs up existing shell files to `~/.dotfiles-backups/<timestamp>/`
-- symlinks managed files into `$HOME`
-- installs the `jodok` theme into oh-my-zsh custom themes
-- creates optional local override files if missing
+```bash
+curl -fsSL https://raw.githubusercontent.com/jodok/dotfiles/main/install.sh | bash
+```
+
+## Layout on target machine
+
+```text
+~/.oh-my-zsh/custom/
+  jodok/
+    aliases.zsh
+    exports.zsh
+    functions.zsh
+    prompt.zsh
+    update.sh
+  themes/
+    jodok.zsh-theme
+```
 
 ## Local overrides
 
-These files are intentionally not managed by git and can hold machine-local or secret values:
+Optional local files stay outside git:
 - `~/.zshrc.local`
 - `~/.zshenv.local`
 
-They are sourced automatically when present.
-
 ## Notes
 
-- Keep secrets out of this repo.
-- Add personal scripts to `bin/` and they will be added to `PATH`.
-- Later we can add Brewfile, apt support, and host-specific overlays.
+- No daemon, no background updater.
+- Secrets do not belong in this repo.
+- Later we can add more aliases, functions, plugins, and package bootstrap.
