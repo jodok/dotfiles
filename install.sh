@@ -6,13 +6,9 @@ BRANCH="${BRANCH:-main}"
 ZSH_DIR="${ZSH:-$HOME/.oh-my-zsh}"
 CUSTOM_DIR="$ZSH_DIR/custom"
 THEMES_DIR="$CUSTOM_DIR/themes"
-INSTALL_DIR="$CUSTOM_DIR/jodok"
 RAW_BASE="https://raw.githubusercontent.com/${REPO_SLUG}/${BRANCH}"
 THEME_URL="$RAW_BASE/oh-my-zsh/themes/jodok.zsh-theme"
-ALIASES_URL="$RAW_BASE/zsh/aliases.zsh"
 EXPORTS_URL="$RAW_BASE/zsh/exports.zsh"
-FUNCTIONS_URL="$RAW_BASE/zsh/functions.zsh"
-PROMPT_URL="$RAW_BASE/zsh/prompt.zsh"
 UPDATE_URL="$RAW_BASE/update.sh"
 
 log() {
@@ -59,12 +55,6 @@ patch_or_append() {
   fi
 }
 
-ensure_source_line() {
-  local file="$1"
-  local line="$2"
-  grep -Fqx "$line" "$file" || printf '\n%s\n' "$line" >> "$file"
-}
-
 patch_zshrc() {
   local zshrc="$HOME/.zshrc"
   touch "$zshrc"
@@ -72,11 +62,6 @@ patch_zshrc() {
   patch_or_append "$zshrc" '^([[:space:]]*export[[:space:]]+)?ZSH_THEME=.*$' 'ZSH_THEME="jodok"'
   patch_or_append "$zshrc" "^[[:space:]]*zstyle ':omz:update' mode .*$" "zstyle ':omz:update' mode auto"
   patch_or_append "$zshrc" '^[[:space:]]*COMPLETION_WAITING_DOTS=.*$' 'COMPLETION_WAITING_DOTS="true"'
-
-  ensure_source_line "$zshrc" '[ -f "$ZSH/custom/jodok/exports.zsh" ] && source "$ZSH/custom/jodok/exports.zsh"'
-  ensure_source_line "$zshrc" '[ -f "$ZSH/custom/jodok/functions.zsh" ] && source "$ZSH/custom/jodok/functions.zsh"'
-  ensure_source_line "$zshrc" '[ -f "$ZSH/custom/jodok/aliases.zsh" ] && source "$ZSH/custom/jodok/aliases.zsh"'
-  ensure_source_line "$zshrc" '[ -f "$ZSH/custom/jodok/prompt.zsh" ] && source "$ZSH/custom/jodok/prompt.zsh"'
 
   log "patched $zshrc"
 }
@@ -87,15 +72,12 @@ main() {
 
   ensure_oh_my_zsh
 
-  mkdir -p "$INSTALL_DIR" "$THEMES_DIR"
+  mkdir -p "$THEMES_DIR" "$CUSTOM_DIR"
 
   fetch_file "$THEME_URL" "$THEMES_DIR/jodok.zsh-theme"
-  fetch_file "$ALIASES_URL" "$INSTALL_DIR/aliases.zsh"
-  fetch_file "$EXPORTS_URL" "$INSTALL_DIR/exports.zsh"
-  fetch_file "$FUNCTIONS_URL" "$INSTALL_DIR/functions.zsh"
-  fetch_file "$PROMPT_URL" "$INSTALL_DIR/prompt.zsh"
-  fetch_file "$UPDATE_URL" "$INSTALL_DIR/update.sh"
-  chmod +x "$INSTALL_DIR/update.sh"
+  fetch_file "$EXPORTS_URL" "$CUSTOM_DIR/exports.zsh"
+  fetch_file "$UPDATE_URL" "$CUSTOM_DIR/jodok-update.sh"
+  chmod +x "$CUSTOM_DIR/jodok-update.sh"
 
   touch "$HOME/.zshrc.local" "$HOME/.zshenv.local"
   patch_zshrc
