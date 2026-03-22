@@ -18,4 +18,4 @@
 - When work is done, always commit, push, and open a pull request.
 - Always squash-merge into `main`.
 - Repository-specific rules may add constraints, but must not weaken these global rules.
-- If the global template in `jodok/agents` changes, update this file accordingly.
+- If a rule should apply across repositories, add it here first and then update the consuming repositories.
