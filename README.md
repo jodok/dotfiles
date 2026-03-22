@@ -5,7 +5,7 @@ Portable oh-my-zsh customizations for macOS and Linux.
 ## Install
 
 ```bash
-sh -c "$(curl -fsSL https://raw.githubusercontent.com/jodok/dotfiles/main/install.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/jodok/dotfiles/main/install.sh)"
 ```
 
 ## What it does
