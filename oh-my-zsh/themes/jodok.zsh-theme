@@ -1,6 +1,6 @@
 setopt prompt_subst
 
-local prompt_user=''
+prompt_user=''
 if [[ "$USER" != "jodok" && "$USER" != "admin" ]]; then
   prompt_user='%{$fg[yellow]%}%n@%{$reset_color%}'
 fi
