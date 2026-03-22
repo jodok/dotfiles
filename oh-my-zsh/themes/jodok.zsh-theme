@@ -1,7 +1,9 @@
 setopt prompt_subst
 
-local prompt_user=''
-if [[ "$USER" != "jodok" && "$USER" != "admin" ]]; then
+prompt_user=''
+if [[ "$EUID" -eq 0 ]]; then
+  prompt_user='%{$fg[yellow]%}%n@%{$reset_color%}'
+elif [[ "$USER" != "jodok" && "$USER" != "admin" ]]; then
   prompt_user='%{$fg[yellow]%}%n@%{$reset_color%}'
 fi
 
