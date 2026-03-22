@@ -1,6 +1,6 @@
 # jodok/dotfiles
 
-Portable oh-my-zsh customizations for macOS and Linux.
+Portable shell customizations for macOS and Linux.
 
 ## Install
 
@@ -10,32 +10,49 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/jodok/dotfiles/main/inst
 
 ## What it does
 
-The installer is idempotent and will:
-- install oh-my-zsh if missing
-- ensure `~/.oh-my-zsh/custom/themes/jodok.zsh-theme` exists
-- install `exports.zsh` to `~/.oh-my-zsh/custom/exports.zsh`
-- install `aliases.zsh` to `~/.oh-my-zsh/custom/aliases.zsh`
-- install `update.sh` to `~/.oh-my-zsh/custom/update.sh`
-- patch `~/.zshrc` so it contains:
+The installer is idempotent and behaves differently by OS.
+
+### macOS
+
+- installs oh-my-zsh if missing
+- ensures `~/.oh-my-zsh/custom/themes/jodok.zsh-theme` exists
+- installs `zsh/exports.zsh` to `~/.oh-my-zsh/custom/exports.zsh`
+- installs `zsh/aliases.zsh` to `~/.oh-my-zsh/custom/aliases.zsh`
+- installs `update.sh` to `~/.oh-my-zsh/custom/update.sh`
+- patches `~/.zshrc` so it contains:
   - `export ZSH="$HOME/.oh-my-zsh"`
   - `ZSH_THEME="jodok"`
   - `zstyle ':omz:update' mode auto`
   - `COMPLETION_WAITING_DOTS="true"`
   - `source $ZSH/oh-my-zsh.sh`
 
+### Linux
+
+- installs bash config to `~/.jodok/bashrc`
+- installs `update.sh` to `~/.jodok/update.sh`
+- patches `~/.bashrc` to source `~/.jodok/bashrc`
+- sets a host-aware prompt:
+  - `jodok` and `admin` show `host ➜ path`
+  - `root` shows `root@host ➜ path`
+  - other users show `user@host ➜ path`
+
 ## Update
+
+On macOS:
 
 ```bash
 oh-my-jodok
 ```
 
-Equivalent to:
+On Linux:
 
 ```bash
-~/.oh-my-zsh/custom/update.sh
+~/.jodok/update.sh
 ```
 
 ## Layout on target machine
+
+### macOS
 
 ```text
 ~/.oh-my-zsh/custom/
@@ -46,14 +63,29 @@ Equivalent to:
     jodok.zsh-theme
 ```
 
+### Linux
+
+```text
+~/.jodok/
+  bashrc
+  update.sh
+```
+
 ## Local overrides
 
-Optional local files stay outside git:
+Optional local files stay outside git.
+
+macOS:
 - `~/.zshrc.local`
 - `~/.zshenv.local`
+
+Linux:
+- `~/.bashrc.local`
+- `~/.bash_profile.local`
 
 ## Notes
 
 - No daemon, no background updater.
-- Uses standard oh-my-zsh auto-loading for `custom/*.zsh`.
+- macOS uses oh-my-zsh.
+- Linux uses bash-first setup.
 - Secrets do not belong in this repo.

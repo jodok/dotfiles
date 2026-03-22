@@ -3,14 +3,19 @@ set -euo pipefail
 
 REPO_SLUG="${REPO_SLUG:-jodok/dotfiles}"
 BRANCH="${BRANCH:-main}"
+RAW_BASE="https://raw.githubusercontent.com/${REPO_SLUG}/${BRANCH}"
+UPDATE_URL="$RAW_BASE/update.sh"
+OS="$(uname -s)"
+
 ZSH_DIR="${ZSH:-$HOME/.oh-my-zsh}"
 CUSTOM_DIR="$ZSH_DIR/custom"
 THEMES_DIR="$CUSTOM_DIR/themes"
-RAW_BASE="https://raw.githubusercontent.com/${REPO_SLUG}/${BRANCH}"
 THEME_URL="$RAW_BASE/oh-my-zsh/themes/jodok.zsh-theme"
 EXPORTS_URL="$RAW_BASE/zsh/exports.zsh"
 ALIASES_URL="$RAW_BASE/zsh/aliases.zsh"
-UPDATE_URL="$RAW_BASE/update.sh"
+
+BASH_DIR="$HOME/.jodok"
+BASHRC_URL="$RAW_BASE/bash/bashrc"
 
 log() {
   printf '\n[%s] %s\n' "dotfiles" "$*"
@@ -21,20 +26,6 @@ require_cmd() {
     echo "$1 is required but not installed" >&2
     exit 1
   }
-}
-
-ensure_oh_my_zsh() {
-  if [ -d "$ZSH_DIR" ]; then
-    log "oh-my-zsh already installed"
-    return
-  fi
-
-  require_cmd git
-  require_cmd curl
-
-  log "installing oh-my-zsh"
-  RUNZSH=no CHSH=no KEEP_ZSHRC=yes \
-    sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
 }
 
 fetch_file() {
@@ -75,6 +66,40 @@ path.write_text("\n".join(out).rstrip() + "\n")
 PY
 }
 
+ensure_line_present() {
+  local file="$1"
+  local line="$2"
+
+  python3 - "$file" "$line" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+line = sys.argv[2]
+text = path.read_text() if path.exists() else ""
+lines = text.splitlines()
+if line not in lines:
+    if lines and lines[-1] != "":
+        lines.append("")
+    lines.append(line)
+path.write_text("\n".join(lines).rstrip() + "\n")
+PY
+}
+
+ensure_oh_my_zsh() {
+  if [ -d "$ZSH_DIR" ]; then
+    log "oh-my-zsh already installed"
+    return
+  fi
+
+  require_cmd git
+  require_cmd curl
+
+  log "installing oh-my-zsh"
+  RUNZSH=no CHSH=no KEEP_ZSHRC=yes \
+    sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+}
+
 ensure_omz_source_order() {
   local file="$1"
   python3 - "$file" <<'PY'
@@ -112,7 +137,7 @@ patch_zshrc() {
   log "patched $zshrc"
 }
 
-main() {
+install_macos() {
   require_cmd zsh
   require_cmd curl
   require_cmd python3
@@ -132,6 +157,40 @@ main() {
 
   log "done"
   log "restart your shell or run: source ~/.zshrc"
+}
+
+install_linux() {
+  require_cmd bash
+  require_cmd curl
+  require_cmd python3
+
+  mkdir -p "$BASH_DIR"
+  fetch_file "$BASHRC_URL" "$BASH_DIR/bashrc"
+  fetch_file "$UPDATE_URL" "$BASH_DIR/update.sh"
+  chmod +x "$BASH_DIR/update.sh"
+
+  touch "$HOME/.bashrc.local" "$HOME/.bash_profile.local"
+  touch "$HOME/.bashrc"
+  ensure_line_present "$HOME/.bashrc" '[ -f "$HOME/.jodok/bashrc" ] && source "$HOME/.jodok/bashrc"'
+
+  log "patched $HOME/.bashrc"
+  log "done"
+  log "restart your shell or run: source ~/.bashrc"
+}
+
+main() {
+  case "$OS" in
+    Darwin)
+      install_macos
+      ;;
+    Linux)
+      install_linux
+      ;;
+    *)
+      echo "unsupported OS: $OS" >&2
+      exit 1
+      ;;
+  esac
 }
 
 main "$@"
