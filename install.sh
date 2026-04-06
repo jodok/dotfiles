@@ -75,6 +75,22 @@ path.write_text("\n".join(out).rstrip() + "\n")
 PY
 }
 
+remove_exact_line() {
+  local file="$1"
+  local line="$2"
+
+  python3 - "$file" "$line" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+line = sys.argv[2]
+text = path.read_text() if path.exists() else ""
+lines = text.splitlines()
+path.write_text("\n".join(existing for existing in lines if existing != line).rstrip() + "\n")
+PY
+}
+
 ensure_omz_source_order() {
   local file="$1"
   python3 - "$file" <<'PY'
@@ -108,6 +124,7 @@ patch_zshrc() {
   upsert_line "$zshrc" "zstyle ':omz:update' mode" "zstyle ':omz:update' mode auto"
   upsert_line "$zshrc" 'COMPLETION_WAITING_DOTS=' 'COMPLETION_WAITING_DOTS="true"'
   ensure_omz_source_order "$zshrc"
+  remove_exact_line "$zshrc" 'PROMPT="%{$fg[red]%}%m %{$reset_color%}${PROMPT}"'
 
   log "patched $zshrc"
 }

@@ -22,6 +22,7 @@ The installer is idempotent and will:
   - `zstyle ':omz:update' mode auto`
   - `COMPLETION_WAITING_DOTS="true"`
   - `source $ZSH/oh-my-zsh.sh`
+  - no legacy host-prepend `PROMPT=...${PROMPT}` line
 
 ## Update
 
