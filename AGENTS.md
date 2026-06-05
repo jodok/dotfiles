@@ -15,7 +15,9 @@
 - Always work on a branch prefixed with the active agent name, for example `tashi/...`, `codex/...`, or `claude/...`.
 - Always use commitlint-compatible Conventional Commit messages.
 - Always add `Jodok Batlogg <jodok@batlogg.com>` as co-author on commits.
-- When work is done, always commit, push, and open a pull request.
+- As soon as work is reviewable, always commit it, push the branch, and open a pull request. Do not wait until the very end if review can happen earlier.
+- After creating a pull request, always send the user the exact clickable PR URL.
 - Always squash-merge into `main`.
 - Repository-specific rules may add constraints, but must not weaken these global rules.
+- Every repository using these global rules must have a root `AGENTS.md` that includes them.
 - If a rule should apply across repositories, add it here first and then update the consuming repositories.
