@@ -10,6 +10,7 @@ RAW_BASE="https://raw.githubusercontent.com/${REPO_SLUG}/${BRANCH}"
 THEME_URL="$RAW_BASE/oh-my-zsh/themes/jodok.zsh-theme"
 EXPORTS_URL="$RAW_BASE/zsh/exports.zsh"
 ALIASES_URL="$RAW_BASE/zsh/aliases.zsh"
+COLORS_URL="$RAW_BASE/zsh/colors.zsh"
 UPDATE_URL="$RAW_BASE/update.sh"
 
 log() {
@@ -141,6 +142,7 @@ main() {
   fetch_file "$THEME_URL" "$THEMES_DIR/jodok.zsh-theme"
   fetch_file "$EXPORTS_URL" "$CUSTOM_DIR/exports.zsh"
   fetch_file "$ALIASES_URL" "$CUSTOM_DIR/aliases.zsh"
+  fetch_file "$COLORS_URL" "$CUSTOM_DIR/colors.zsh"
   fetch_file "$UPDATE_URL" "$CUSTOM_DIR/update.sh"
   chmod +x "$CUSTOM_DIR/update.sh"
 
