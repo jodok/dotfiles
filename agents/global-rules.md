@@ -6,16 +6,23 @@ Code imports them from `~/.claude/CLAUDE.md`.
 
 ## Git and pull requests
 
-- Never push directly to `main`.
-- Work on a branch prefixed with the active agent name, for example
-  `claude/...`, `codex/...`, or `tashi/...`.
-- Use commitlint-compatible Conventional Commit messages.
-- If a commit is not authored under Jodok's own identity (bot or cloud
-  agents), add `Jodok Batlogg <jodok@batlogg.com>` as co-author.
-- As soon as work is reviewable, commit it, push the branch, and open a
-  pull request. Do not wait until the very end if review can happen earlier.
-- After creating a pull request, send the exact clickable PR URL.
-- Squash-merge into `main`.
+- Author every commit as `Jodok Batlogg <jodok@batlogg.com>`. Agents and
+  bots never take authorship; they credit themselves with a
+  `Co-Authored-By:` trailer instead.
+- `main` is protected: no direct pushes, no force pushes, linear history.
+  Every change lands through a pull request.
+- Branch names: `<agent>/<topic>` for agent work (`claude/...`,
+  `codex/...`), `jodok/<topic>` for manual work.
+- Use commitlint-compatible Conventional Commit messages. The PR title must
+  be a valid Conventional Commit too — squash merging makes it the commit
+  message on `main`.
+- Open the PR as soon as the work is reviewable — as a draft if it is still
+  in progress. After creating it, send the exact clickable PR URL.
+- Keep PRs small and single-topic; split unrelated changes.
+- Squash-merge only, with required checks green; the branch is deleted on
+  merge.
+- Force-pushing your own PR branch (for example after a rebase) is fine;
+  never rewrite `main` or someone else's branch.
 - Repository-specific rules may add constraints, but must not weaken these
   global rules.
 
