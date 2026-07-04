@@ -144,6 +144,7 @@ install_managed_file() {
   fi
   mkdir -p "$(dirname "$target")"
   mv "$tmp" "$target"
+  chmod 644 "$target"
   log "installed $target"
 }
 
