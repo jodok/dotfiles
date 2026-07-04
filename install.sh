@@ -11,6 +11,8 @@ THEME_URL="$RAW_BASE/oh-my-zsh/themes/jodok.zsh-theme"
 EXPORTS_URL="$RAW_BASE/zsh/exports.zsh"
 ALIASES_URL="$RAW_BASE/zsh/aliases.zsh"
 UPDATE_URL="$RAW_BASE/update.sh"
+AGENT_RULES_URL="$RAW_BASE/agents/global-rules.md"
+CLAUDE_MD_URL="$RAW_BASE/agents/claude.md"
 
 log() {
   printf '\n[%s] %s\n' "dotfiles" "$*"
@@ -129,6 +131,39 @@ patch_zshrc() {
   log "patched $zshrc"
 }
 
+install_managed_file() {
+  local url="$1"
+  local target="$2"
+  local tmp
+
+  tmp="$(mktemp)"
+  curl -fsSL "$url" -o "$tmp"
+  if [ -f "$target" ] && ! cmp -s "$tmp" "$target"; then
+    cp "$target" "$target.bak"
+    log "backed up $target to $target.bak"
+  fi
+  mkdir -p "$(dirname "$target")"
+  mv "$tmp" "$target"
+  chmod 644 "$target"
+  log "installed $target"
+}
+
+install_agent_rules() {
+  local rules_target="$HOME/.agents/global-rules.md"
+  local codex_agents="$HOME/.codex/AGENTS.md"
+
+  install_managed_file "$AGENT_RULES_URL" "$rules_target"
+  install_managed_file "$CLAUDE_MD_URL" "$HOME/.claude/CLAUDE.md"
+
+  mkdir -p "$HOME/.codex"
+  if [ -e "$codex_agents" ] && [ ! -L "$codex_agents" ] && [ -s "$codex_agents" ]; then
+    cp "$codex_agents" "$codex_agents.bak"
+    log "backed up $codex_agents to $codex_agents.bak"
+  fi
+  ln -sfn "$rules_target" "$codex_agents"
+  log "linked $codex_agents -> $rules_target"
+}
+
 main() {
   require_cmd zsh
   require_cmd curl
@@ -143,6 +178,8 @@ main() {
   fetch_file "$ALIASES_URL" "$CUSTOM_DIR/aliases.zsh"
   fetch_file "$UPDATE_URL" "$CUSTOM_DIR/update.sh"
   chmod +x "$CUSTOM_DIR/update.sh"
+
+  install_agent_rules
 
   touch "$HOME/.zshrc.local" "$HOME/.zshenv.local"
   patch_zshrc
