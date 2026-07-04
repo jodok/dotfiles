@@ -18,6 +18,10 @@ Code imports them from `~/.claude/CLAUDE.md`.
   message on `main`.
 - Open the PR as soon as the work is reviewable — as a draft if it is still
   in progress. After creating it, send the exact clickable PR URL.
+- Codex auto-reviews every PR (ChatGPT Codex Connector). Address its
+  findings and resolve all review threads before merging — branch
+  protection enforces the resolution. Mention `@codex review` to re-request
+  a review after larger follow-up pushes.
 - Keep PRs small and single-topic; split unrelated changes.
 - Squash-merge only, with required checks green; the branch is deleted on
   merge.
