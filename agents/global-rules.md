@@ -21,17 +21,18 @@ Code imports them from `~/.claude/CLAUDE.md`.
 
 ## Picking the right models for workflows and subagents
 
-Rankings, higher = better. Cost reflects what I actually pay (OpenAI has
-really generous limits), not list price. Intelligence is how hard a problem
-you can hand the model unsupervised. Taste covers UI/UX, code quality, API
-design, and copy.
+Rankings, higher = better. Cost reflects what I actually pay — both OpenAI
+and Claude (Max plan) are flat-rate subscriptions with generous limits, so
+cost differences between Claude models reflect how fast each burns the Max
+quota, not list price. Intelligence is how hard a problem you can hand the
+model unsupervised. Taste covers UI/UX, code quality, API design, and copy.
 
 | model    | cost | intelligence | taste |
 |----------|------|--------------|-------|
 | gpt-5.5  | 9    | 8            | 5     |
-| sonnet-5 | 6    | 5            | 7     |
-| opus-4.8 | 4    | 8            | 8     |
-| fable-5  | 2    | 9            | 9     |
+| sonnet-5 | 9    | 5            | 7     |
+| opus-4.8 | 7    | 8            | 8     |
+| fable-5  | 5    | 9            | 9     |
 
 How to apply:
 
@@ -42,7 +43,11 @@ How to apply:
 - Cost is a tie-breaker only; when axes conflict for anything that ships,
   intelligence > taste > cost.
 - Bulk/mechanical work (clear-spec implementation, data analysis,
-  migrations): gpt-5.5 — cheap and token-efficient.
+  migrations): gpt-5.5 or sonnet-5, both effectively flat-rate. Prefer
+  gpt-5.5 for token-heavy grinds (preserves Max quota), sonnet-5 when the
+  output should read well.
+- Unsupervised medium-hard chunks: opus-4.8 is a solid default now
+  (intelligence 8 at cost 7), no longer a splurge.
 - Anything user-facing (UI, copy, API design) needs taste ≥ 7.
 - Reviews of plans and implementations: fable-5 or opus-4.8, optionally
   gpt-5.5 as an extra independent perspective.
