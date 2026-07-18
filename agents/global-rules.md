@@ -38,12 +38,13 @@ cost differences between Claude models reflect how fast each burns the Max
 quota, not list price. Intelligence is how hard a problem you can hand the
 model unsupervised. Taste covers UI/UX, code quality, API design, and copy.
 
-| model    | cost | intelligence | taste |
-|----------|------|--------------|-------|
-| gpt-5.5  | 9    | 8            | 5     |
-| sonnet-5 | 9    | 5            | 7     |
-| opus-4.8 | 7    | 8            | 8     |
-| fable-5  | 5    | 9            | 9     |
+| model     | cost | intelligence | taste |
+|-----------|------|--------------|-------|
+| haiku-4.5 | 10   | 3            | 4     |
+| gpt-5.5   | 9    | 8            | 5     |
+| sonnet-5  | 9    | 5            | 7     |
+| opus-4.8  | 7    | 8            | 8     |
+| fable-5   | 5    | 9            | 9     |
 
 How to apply:
 
@@ -62,7 +63,15 @@ How to apply:
 - Anything user-facing (UI, copy, API design) needs taste ≥ 7.
 - Reviews of plans and implementations: fable-5 or opus-4.8, optionally
   gpt-5.5 as an extra independent perspective.
-- Never use Haiku.
+- haiku-4.5 is allowed for fully-specified mechanical sweeps where the
+  spec determines the output (mass renames, file inventories, format
+  checks, template boilerplate). Never for anything needing judgment.
+- Supervisors (fable-5 especially) delegate DOWN by default: if a task is
+  fully specified, hand it to the cheapest row that clears the bar — even
+  when doing it inline feels faster. Small single-file fixes and doc edits
+  are sonnet/haiku work. Inline fable work is reserved for architecture,
+  ambiguous judgment, delegation specs, integration, review-of-reviews,
+  and secret handling.
 - If a task calls for a model above your own row (for example taste ≥ 7
   work while you run as gpt-5.5), say so and recommend handing it over
   instead of shipping below the bar.
