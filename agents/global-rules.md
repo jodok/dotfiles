@@ -25,6 +25,20 @@ Code imports them from `~/.claude/CLAUDE.md`.
 - Keep PRs small and single-topic; split unrelated changes.
 - Squash-merge only, with required checks green; the branch is deleted on
   merge.
+- **Merge your own PR yourself once everything is green** — required checks
+  passed, review gate approved, every review thread resolved. Do not park a
+  green PR waiting for Jodok to press the button, and do not ask whether to
+  merge; green is the answer. Report the merge, do not announce the
+  intention.
+- Green means green as GitHub sees it: `mergeStateStatus` is `CLEAN` and no
+  review thread is unresolved. A pending or failing check, a requested
+  change, or an unresolved thread means fix it, not merge it — and never
+  reach for an admin override to bypass a gate.
+- Merge only what you opened. Someone else's PR, and anything whose scope
+  Jodok is still deciding, stays for him.
+- After merging, finish the chain: land the follow-ups that PR unblocked —
+  version pins, dependent config — rather than leaving the change
+  half-deployed.
 - Force-pushing your own PR branch (for example after a rebase) is fine;
   never rewrite `main` or someone else's branch.
 - Repository-specific rules may add constraints, but must not weaken these
