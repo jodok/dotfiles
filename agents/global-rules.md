@@ -23,8 +23,19 @@ Code imports them from `~/.claude/CLAUDE.md`.
   protection enforces the resolution. Mention `@codex review` to re-request
   a review after larger follow-up pushes.
 - Keep PRs small and single-topic; split unrelated changes.
-- Squash-merge only, with required checks green; the branch is deleted on
-  merge.
+- Squash-merge only, with required checks green.
+- **Delete the branch when it merges.** Pass `--delete-branch` to
+  `gh pr merge` every time rather than trusting it to happen by itself, and
+  remove the local branch and any worktree too. A squash-merged branch
+  reports itself as "ahead of main" forever, so leftovers read as unfinished
+  work months later and cost someone a real investigation.
+- **Repositories must set `delete_branch_on_merge`.** Check it with
+  `gh api repos/<owner>/<repo> --jq .delete_branch_on_merge`; if it is
+  `false`, turn it on with
+  `gh api -X PATCH repos/<owner>/<repo> -F delete_branch_on_merge=true`.
+  The repo setting is the safety net for merges made outside the CLI — the
+  web UI's merge button honors it — so both belong in place, not one or the
+  other.
 - **Merge your own PR yourself once everything is green** — required checks
   passed, review gate approved, every review thread resolved. Do not park a
   green PR waiting for Jodok to press the button, and do not ask whether to
