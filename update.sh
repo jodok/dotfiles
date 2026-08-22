@@ -9,7 +9,8 @@ STATE_DIR="${OH_MY_JODOK_STATE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/oh-my-jodok}
 UPDATE_DAYS="${OH_MY_JODOK_UPDATE_DAYS:-13}"
 LAST_CHECK_FILE="$STATE_DIR/last-check"
 LAST_APPLIED_FILE="$STATE_DIR/last-applied"
-LOCK_DIR="$STATE_DIR/update.lock"
+LOCK_FILE="$STATE_DIR/update.lock"
+LOCK_KIND=''
 API_URL="https://api.github.com/repos/${REPO_SLUG}/commits/${BRANCH}"
 RAW_BASE="https://raw.githubusercontent.com/${REPO_SLUG}"
 
@@ -36,37 +37,42 @@ read_state() {
 }
 
 acquire_lock() {
-  local owner
-
   mkdir -p "$STATE_DIR"
-  if mkdir "$LOCK_DIR" 2>/dev/null; then
-    printf '%s\n' "$$" > "$LOCK_DIR/pid"
-    return 0
-  fi
-
-  owner="$(read_state "$LOCK_DIR/pid")"
-  case "$owner" in
-    ''|*[!0-9]*) ;;
-    *)
-      if kill -0 "$owner" 2>/dev/null; then
-        return 1
-      fi
-      ;;
-  esac
-
-  rm -f "$LOCK_DIR/pid"
-  if ! rmdir "$LOCK_DIR" 2>/dev/null; then
+  if command -v shlock >/dev/null 2>&1; then
+    if shlock -f "$LOCK_FILE" -p "$$"; then
+      LOCK_KIND=shlock
+      return 0
+    fi
     return 1
   fi
-  if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+
+  if ! command -v flock >/dev/null 2>&1; then
     return 1
   fi
-  printf '%s\n' "$$" > "$LOCK_DIR/pid"
+  exec 9>"$LOCK_FILE"
+  if ! flock -n 9; then
+    exec 9>&-
+    return 1
+  fi
+  LOCK_KIND=flock
 }
 
 release_lock() {
-  rm -f "$LOCK_DIR/pid"
-  rmdir "$LOCK_DIR" 2>/dev/null || true
+  local owner
+
+  case "$LOCK_KIND" in
+    shlock)
+      owner="$(read_state "$LOCK_FILE" | tr -d '[:space:]')"
+      if [ "$owner" = "$$" ]; then
+        rm -f "$LOCK_FILE"
+      fi
+      ;;
+    flock)
+      flock -u 9
+      exec 9>&-
+      ;;
+  esac
+  LOCK_KIND=''
 }
 
 fetch_remote_sha() {

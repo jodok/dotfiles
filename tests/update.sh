@@ -136,6 +136,13 @@ test "$(sed -n '1p' "$FAKE_INSTALL_COUNT")" = 4
 export FAKE_REMOTE_SHA=4444444444444444444444444444444444444444
 export FAKE_INSTALL_DELAY=1
 printf '0\n' > "$TEST_DIR/state/last-check"
+if command -v shlock >/dev/null 2>&1; then
+  printf '12345\n' > "$TEST_DIR/state/update.lock"
+  touch -t 200001010000 "$TEST_DIR/state/update.lock"
+else
+  : > "$TEST_DIR/state/update.lock"
+fi
+sleep 2
 "$ROOT_DIR/update.sh" --auto &
 first_pid=$!
 "$ROOT_DIR/update.sh" --auto &
