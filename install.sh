@@ -117,9 +117,15 @@ PY
 
 patch_zshrc() {
   local zshrc="$HOME/.zshrc"
+  local quoted_zsh_dir
   touch "$zshrc"
 
-  upsert_line "$zshrc" 'export ZSH=' 'export ZSH="$HOME/.oh-my-zsh"'
+  if [ "$ZSH_DIR" = "$HOME/.oh-my-zsh" ]; then
+    quoted_zsh_dir='"$HOME/.oh-my-zsh"'
+  else
+    printf -v quoted_zsh_dir '%q' "$ZSH_DIR"
+  fi
+  upsert_line "$zshrc" 'export ZSH=' "export ZSH=$quoted_zsh_dir"
   upsert_line "$zshrc" 'ZSH_THEME=' 'ZSH_THEME="jodok"'
   upsert_line "$zshrc" "zstyle ':omz:update' mode" "zstyle ':omz:update' mode auto"
   upsert_line "$zshrc" 'COMPLETION_WAITING_DOTS=' 'COMPLETION_WAITING_DOTS="true"'

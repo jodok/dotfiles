@@ -71,10 +71,10 @@ chmod +x "$TEST_DIR/bin/curl"
 export DOTFILES_TEST_ROOT="$ROOT_DIR"
 export HOME="$TEST_DIR/home"
 export PATH="$TEST_DIR/bin:$PATH"
-export ZSH_CUSTOM="$HOME/.oh-my-zsh/custom-alt"
-unset ZSH
+export ZSH="$HOME/omz-alt"
+export ZSH_CUSTOM="$HOME/custom-alt"
 
-mkdir -p "$ZSH_CUSTOM"
+mkdir -p "$ZSH" "$ZSH_CUSTOM"
 printf 'local aliases\n' > "$ZSH_CUSTOM/aliases.zsh"
 cat > "$HOME/.zshrc" <<'EOF'
 if [[ -n "$HOST" ]]; then
@@ -94,6 +94,7 @@ cmp "$ZSH_CUSTOM/aliases.zsh" "$ROOT_DIR/zsh/aliases.zsh"
 test -f "$ZSH_CUSTOM/update-check.zsh"
 test -L "$HOME/.codex/AGENTS.md"
 test -f "$HOME/.oh-my-jodok.zsh"
+grep -Fqx "export ZSH=$ZSH" "$HOME/.zshrc"
 
 grep -Fq 'if [[ -n "$HOST" ]]; then' "$HOME/.zshrc"
 test "$(grep -Fc 'source "$HOME/.zshrc.local"' "$HOME/.zshrc")" = 1
