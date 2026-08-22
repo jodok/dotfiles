@@ -145,13 +145,26 @@ install_managed_file() {
   tmp="$(mktemp)"
   curl -fsSL "$url" -o "$tmp"
   if [ -f "$target" ] && ! cmp -s "$tmp" "$target"; then
-    cp "$target" "$target.bak"
-    log "backed up $target to $target.bak"
+    backup_file "$target"
   fi
   mkdir -p "$(dirname "$target")"
   mv "$tmp" "$target"
   chmod 644 "$target"
   log "installed $target"
+}
+
+backup_file() {
+  local target="$1"
+  local backup="$target.bak"
+  local suffix=1
+
+  while [ -e "$backup" ]; do
+    backup="$target.bak.$suffix"
+    suffix=$((suffix + 1))
+  done
+
+  cp "$target" "$backup"
+  log "backed up $target to $backup"
 }
 
 install_agent_rules() {
@@ -163,8 +176,7 @@ install_agent_rules() {
 
   mkdir -p "$HOME/.codex"
   if [ -e "$codex_agents" ] && [ ! -L "$codex_agents" ] && [ -s "$codex_agents" ]; then
-    cp "$codex_agents" "$codex_agents.bak"
-    log "backed up $codex_agents to $codex_agents.bak"
+    backup_file "$codex_agents"
   fi
   ln -sfn "$rules_target" "$codex_agents"
   log "linked $codex_agents -> $rules_target"

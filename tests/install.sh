@@ -64,9 +64,12 @@ printf 'local aliases\n' > "$HOME/.oh-my-zsh/custom/aliases.zsh"
 printf 'source $ZSH/oh-my-zsh.sh\n' > "$HOME/.zshrc"
 
 "$ROOT_DIR/install.sh" >/dev/null
+printf 'second local aliases\n' > "$HOME/.oh-my-zsh/custom/aliases.zsh"
+"$ROOT_DIR/install.sh" >/dev/null
 "$ROOT_DIR/install.sh" >/dev/null
 
 test "$(sed -n '1p' "$HOME/.oh-my-zsh/custom/aliases.zsh.bak")" = 'local aliases'
+test "$(sed -n '1p' "$HOME/.oh-my-zsh/custom/aliases.zsh.bak.1")" = 'second local aliases'
 cmp "$HOME/.oh-my-zsh/custom/aliases.zsh" "$ROOT_DIR/zsh/aliases.zsh"
 test -f "$HOME/.oh-my-zsh/custom/update-check.zsh"
 test -L "$HOME/.codex/AGENTS.md"

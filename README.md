@@ -20,7 +20,8 @@ The installer is idempotent and will:
 - install `agents/global-rules.md` to `~/.agents/global-rules.md`
 - install `agents/claude.md` to `~/.claude/CLAUDE.md`
 - link `~/.codex/AGENTS.md` to `~/.agents/global-rules.md`
-- back up any differing existing file to `<file>.bak` before replacing it
+- back up any differing existing file before replacing it, using `<file>.bak`
+  and then numbered `<file>.bak.N` paths so an earlier backup is never replaced
 - patch `~/.zshrc` so it contains:
   - `export ZSH="$HOME/.oh-my-zsh"`
   - `ZSH_THEME="jodok"`
