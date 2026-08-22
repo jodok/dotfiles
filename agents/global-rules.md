@@ -74,21 +74,21 @@ Code imports them from `~/.claude/CLAUDE.md`.
 ## Picking the right models for workflows and subagents
 
 Rankings, higher = better. Cost is an availability score, not API list
-price. Current plan headroom is Codex 20x versus Claude 5x, so treat Codex as
-roughly four times the included capacity and prefer it when its capability
-and taste clear the bar. Codex-Spark has an additional, separate quota lane.
-Claude cost differences reflect how fast each model burns the smaller Max
-quota. Intelligence is how hard a problem you can hand the model
-unsupervised. Taste covers UI/UX, code quality, API design, and copy.
+price. There is one high-capacity subscription with each provider, so treat
+OpenAI and Anthropic plan headroom as broadly balanced. Codex-Spark has an
+additional, separate quota lane. Cost differences within a provider reflect
+how quickly each model burns its plan quota. Intelligence is how hard a
+problem you can hand the model unsupervised. Taste covers UI/UX, code quality,
+API design, and copy.
 
 | model                 | cost | intelligence | taste |
 |-----------------------|------|--------------|-------|
 | gpt-5.3-codex-spark   | 10   | 4            | 4     |
-| gpt-5.5               | 10   | 8            | 5     |
-| haiku-4.5             | 8    | 3            | 4     |
-| sonnet-5              | 7    | 5            | 7     |
-| opus-4.8              | 5    | 8            | 8     |
-| fable-5               | 3    | 9            | 9     |
+| gpt-5.5               | 9    | 8            | 5     |
+| haiku-4.5             | 10   | 3            | 4     |
+| sonnet-5              | 9    | 5            | 7     |
+| opus-4.8              | 7    | 8            | 8     |
+| fable-5               | 5    | 9            | 9     |
 
 How to apply:
 
@@ -107,12 +107,12 @@ How to apply:
   changes, or judgment-heavy UI/copy. Treat it as opportunistic research-
   preview capacity; workflows must not depend on its continued availability.
 - Bulk/mechanical work (clear-spec implementation, data analysis,
-  migrations): prefer gpt-5.5 for token-heavy grinds because the Codex 20x
-  plan has substantially more headroom. Use sonnet-5 when the output needs
-  its stronger taste, despite the smaller Claude 5x quota.
+  migrations): prefer gpt-5.5 when its higher intelligence helps; use
+  sonnet-5 when the output needs its stronger taste. Provider headroom is no
+  longer the deciding factor between them.
 - Unsupervised medium-hard chunks: opus-4.8 is a solid default when its
-  intelligence and taste justify spending the smaller Claude pool
-  (intelligence 8 at cost 5).
+  intelligence and taste justify its higher quota burn (intelligence 8 at
+  cost 7).
 - Anything user-facing (UI, copy, API design) needs taste ≥ 7.
 - Reviews of plans and implementations: fable-5 or opus-4.8, optionally
   gpt-5.5 as an extra independent perspective.
