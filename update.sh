@@ -48,6 +48,16 @@ record_version() {
   write_state "$LAST_CHECK_FILE" "$now"
 }
 
+record_current_version() {
+  local remote_sha
+
+  remote_sha="$(fetch_remote_sha)" || return
+  if [ -z "$remote_sha" ]; then
+    return 1
+  fi
+  record_version "$remote_sha"
+}
+
 apply_update() {
   local ref="$1"
   local commit="${2:-}"
@@ -157,7 +167,7 @@ case "${1:-}" in
     record_version "$2"
     ;;
   --record-current)
-    record_version "$(fetch_remote_sha)"
+    record_current_version
     ;;
   -h|--help) usage ;;
   *)

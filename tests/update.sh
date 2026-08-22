@@ -32,6 +32,9 @@ done
 
 case "$url" in
   https://api.github.com/*)
+    if [ "${FAKE_API_FAIL:-0}" = 1 ]; then
+      exit 22
+    fi
     printf '{"sha":"%s"}\n' "$FAKE_REMOTE_SHA"
     ;;
   https://raw.githubusercontent.com/*/install.sh)
@@ -67,6 +70,14 @@ export FAKE_INSTALL_COUNT="$TEST_DIR/install-count"
 export FAKE_REMOTE_SHA=1111111111111111111111111111111111111111
 export OH_MY_JODOK_STATE_DIR="$TEST_DIR/state"
 export OH_MY_JODOK_UPDATE_DAYS=13
+
+export FAKE_API_FAIL=1
+if "$ROOT_DIR/update.sh" --record-current >/dev/null 2>&1; then
+  echo "failed API lookup unexpectedly recorded a revision" >&2
+  exit 1
+fi
+test ! -e "$TEST_DIR/state/last-applied"
+unset FAKE_API_FAIL
 
 "$ROOT_DIR/update.sh" --auto
 test "$(sed -n '1p' "$FAKE_INSTALL_COUNT")" = 1
