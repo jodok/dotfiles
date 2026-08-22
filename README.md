@@ -12,6 +12,7 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/jodok/dotfiles/main/inst
 
 The installer is idempotent and will:
 - install oh-my-zsh if missing
+- honor non-default `ZSH` and `ZSH_CUSTOM` locations
 - ensure `~/.oh-my-zsh/custom/themes/jodok.zsh-theme` exists
 - install `exports.zsh` to `~/.oh-my-zsh/custom/exports.zsh`
 - install `aliases.zsh` to `~/.oh-my-zsh/custom/aliases.zsh`
@@ -53,7 +54,7 @@ zstyle ':omj:update' frequency 7
 zstyle ':omj:update' mode disabled
 ```
 
-## Layout on target machine
+## Default layout on target machine
 
 ```text
 ~/.oh-my-zsh/custom/

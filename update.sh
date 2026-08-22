@@ -9,6 +9,7 @@ STATE_DIR="${OH_MY_JODOK_STATE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/oh-my-jodok}
 UPDATE_DAYS="${OH_MY_JODOK_UPDATE_DAYS:-13}"
 LAST_CHECK_FILE="$STATE_DIR/last-check"
 LAST_APPLIED_FILE="$STATE_DIR/last-applied"
+LOCK_DIR="$STATE_DIR/update.lock"
 API_URL="https://api.github.com/repos/${REPO_SLUG}/commits/${BRANCH}"
 RAW_BASE="https://raw.githubusercontent.com/${REPO_SLUG}"
 
@@ -32,6 +33,40 @@ read_state() {
   if [ -f "$target" ]; then
     sed -n '1p' "$target"
   fi
+}
+
+acquire_lock() {
+  local owner
+
+  mkdir -p "$STATE_DIR"
+  if mkdir "$LOCK_DIR" 2>/dev/null; then
+    printf '%s\n' "$$" > "$LOCK_DIR/pid"
+    return 0
+  fi
+
+  owner="$(read_state "$LOCK_DIR/pid")"
+  case "$owner" in
+    ''|*[!0-9]*) ;;
+    *)
+      if kill -0 "$owner" 2>/dev/null; then
+        return 1
+      fi
+      ;;
+  esac
+
+  rm -f "$LOCK_DIR/pid"
+  if ! rmdir "$LOCK_DIR" 2>/dev/null; then
+    return 1
+  fi
+  if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+    return 1
+  fi
+  printf '%s\n' "$$" > "$LOCK_DIR/pid"
+}
+
+release_lock() {
+  rm -f "$LOCK_DIR/pid"
+  rmdir "$LOCK_DIR" 2>/dev/null || true
 }
 
 fetch_remote_sha() {
@@ -113,6 +148,11 @@ auto_update() {
   local due_status
   local remote_sha
   local installed_sha
+
+  if ! acquire_lock; then
+    return 0
+  fi
+  trap release_lock EXIT
 
   if is_check_due; then
     due_status=0

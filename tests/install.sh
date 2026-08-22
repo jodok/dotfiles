@@ -71,9 +71,11 @@ chmod +x "$TEST_DIR/bin/curl"
 export DOTFILES_TEST_ROOT="$ROOT_DIR"
 export HOME="$TEST_DIR/home"
 export PATH="$TEST_DIR/bin:$PATH"
-unset ZSH ZSH_CUSTOM
+export ZSH_CUSTOM="$HOME/.oh-my-zsh/custom-alt"
+unset ZSH
 
-printf 'local aliases\n' > "$HOME/.oh-my-zsh/custom/aliases.zsh"
+mkdir -p "$ZSH_CUSTOM"
+printf 'local aliases\n' > "$ZSH_CUSTOM/aliases.zsh"
 cat > "$HOME/.zshrc" <<'EOF'
 if [[ -n "$HOST" ]]; then
   source "$HOME/.zshrc.local"
@@ -82,14 +84,14 @@ source $ZSH/oh-my-zsh.sh
 EOF
 
 "$ROOT_DIR/install.sh" >/dev/null
-printf 'second local aliases\n' > "$HOME/.oh-my-zsh/custom/aliases.zsh"
+printf 'second local aliases\n' > "$ZSH_CUSTOM/aliases.zsh"
 "$ROOT_DIR/install.sh" >/dev/null
 "$ROOT_DIR/install.sh" >/dev/null
 
-test "$(sed -n '1p' "$HOME/.oh-my-zsh/custom/aliases.zsh.bak")" = 'local aliases'
-test "$(sed -n '1p' "$HOME/.oh-my-zsh/custom/aliases.zsh.bak.1")" = 'second local aliases'
-cmp "$HOME/.oh-my-zsh/custom/aliases.zsh" "$ROOT_DIR/zsh/aliases.zsh"
-test -f "$HOME/.oh-my-zsh/custom/update-check.zsh"
+test "$(sed -n '1p' "$ZSH_CUSTOM/aliases.zsh.bak")" = 'local aliases'
+test "$(sed -n '1p' "$ZSH_CUSTOM/aliases.zsh.bak.1")" = 'second local aliases'
+cmp "$ZSH_CUSTOM/aliases.zsh" "$ROOT_DIR/zsh/aliases.zsh"
+test -f "$ZSH_CUSTOM/update-check.zsh"
 test -L "$HOME/.codex/AGENTS.md"
 test -f "$HOME/.oh-my-jodok.zsh"
 
