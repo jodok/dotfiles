@@ -11,7 +11,7 @@ cat > "$TEST_DIR/custom/update.sh" <<'EOF'
 set -euo pipefail
 
 printf '%s %s %s %s\n' \
-  "$OH_MY_JODOK_UPDATE_DAYS" "$*" "$ZSH" "$ZSH_CUSTOM" >> "$UPDATE_CHECK_LOG"
+  "${OH_MY_JODOK_UPDATE_DAYS:-manual}" "$*" "${ZSH:-}" "$0" >> "$UPDATE_CHECK_LOG"
 EOF
 chmod +x "$TEST_DIR/custom/update.sh"
 
@@ -25,10 +25,14 @@ mkdir -p "$HOME"
 printf "zstyle ':omj:update' frequency 7\n" > "$HOME/.oh-my-jodok.zsh"
 zsh -ic "source '$ROOT_DIR/zsh/update-check.zsh'"
 test "$(sed -n '1p' "$UPDATE_CHECK_LOG")" = \
-  "7 --auto $HOME/.oh-my-zsh $ZSH_CUSTOM"
+  "7 --auto $HOME/.oh-my-zsh $ZSH_CUSTOM/update.sh"
+
+zsh -ic "source '$ROOT_DIR/zsh/aliases.zsh'; eval oh-my-jodok"
+test "$(sed -n '2p' "$UPDATE_CHECK_LOG")" = \
+  "manual   $ZSH_CUSTOM/update.sh"
 
 printf "zstyle ':omj:update' mode disabled\n" > "$HOME/.oh-my-jodok.zsh"
 zsh -ic "source '$ROOT_DIR/zsh/update-check.zsh'"
-test "$(wc -l < "$UPDATE_CHECK_LOG" | tr -d ' ')" = 1
+test "$(wc -l < "$UPDATE_CHECK_LOG" | tr -d ' ')" = 2
 
 printf 'update-check tests passed\n'
