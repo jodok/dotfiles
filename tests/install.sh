@@ -13,13 +13,23 @@ set -euo pipefail
 
 output=''
 url=''
+connect_timeout=''
+max_time=''
 while [ "$#" -gt 0 ]; do
   case "$1" in
     -o)
       output="$2"
       shift 2
       ;;
-    -H|--connect-timeout|--max-time)
+    -H)
+      shift 2
+      ;;
+    --connect-timeout)
+      connect_timeout="$2"
+      shift 2
+      ;;
+    --max-time)
+      max_time="$2"
       shift 2
       ;;
     -*) shift ;;
@@ -29,6 +39,9 @@ while [ "$#" -gt 0 ]; do
       ;;
   esac
 done
+
+test -n "$connect_timeout"
+test -n "$max_time"
 
 if [[ "$url" == https://api.github.com/* ]]; then
   printf '{"sha":"4444444444444444444444444444444444444444"}\n'

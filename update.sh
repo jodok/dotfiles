@@ -3,6 +3,8 @@ set -euo pipefail
 
 REPO_SLUG="${REPO_SLUG:-jodok/dotfiles}"
 BRANCH="${BRANCH:-main}"
+CURL_CONNECT_TIMEOUT="${OH_MY_JODOK_CURL_CONNECT_TIMEOUT:-3}"
+CURL_MAX_TIME="${OH_MY_JODOK_CURL_MAX_TIME:-15}"
 STATE_DIR="${OH_MY_JODOK_STATE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/oh-my-jodok}"
 UPDATE_DAYS="${OH_MY_JODOK_UPDATE_DAYS:-13}"
 LAST_CHECK_FILE="$STATE_DIR/last-check"
@@ -33,7 +35,8 @@ read_state() {
 }
 
 fetch_remote_sha() {
-  curl -fsSL --connect-timeout 3 --max-time 10 \
+  curl -fsSL --connect-timeout "$CURL_CONNECT_TIMEOUT" \
+    --max-time "$CURL_MAX_TIME" \
     -H 'Accept: application/vnd.github+json' \
     "$API_URL" 2>/dev/null \
     | python3 -c 'import json, sys; print(json.load(sys.stdin)["sha"])' 2>/dev/null
@@ -64,12 +67,15 @@ apply_update() {
   local installer
 
   installer="$(mktemp)"
-  if ! curl -fsSL "$RAW_BASE/$ref/install.sh" -o "$installer"; then
+  if ! curl -fsSL --connect-timeout "$CURL_CONNECT_TIMEOUT" \
+    --max-time "$CURL_MAX_TIME" "$RAW_BASE/$ref/install.sh" -o "$installer"; then
     rm -f "$installer"
     return 1
   fi
 
   if ! OH_MY_JODOK_INSTALL_COMMIT="$commit" \
+    OH_MY_JODOK_CURL_CONNECT_TIMEOUT="$CURL_CONNECT_TIMEOUT" \
+    OH_MY_JODOK_CURL_MAX_TIME="$CURL_MAX_TIME" \
     REPO_SLUG="$REPO_SLUG" BRANCH="$ref" bash "$installer"; then
     rm -f "$installer"
     return 1

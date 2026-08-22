@@ -3,6 +3,8 @@ set -euo pipefail
 
 REPO_SLUG="${REPO_SLUG:-jodok/dotfiles}"
 BRANCH="${BRANCH:-main}"
+CURL_CONNECT_TIMEOUT="${OH_MY_JODOK_CURL_CONNECT_TIMEOUT:-3}"
+CURL_MAX_TIME="${OH_MY_JODOK_CURL_MAX_TIME:-15}"
 ZSH_DIR="${ZSH:-$HOME/.oh-my-zsh}"
 CUSTOM_DIR="$ZSH_DIR/custom"
 THEMES_DIR="$CUSTOM_DIR/themes"
@@ -37,7 +39,9 @@ ensure_oh_my_zsh() {
 
   log "installing oh-my-zsh"
   RUNZSH=no CHSH=no KEEP_ZSHRC=yes \
-    sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+    sh -c "$(curl -fsSL --connect-timeout "$CURL_CONNECT_TIMEOUT" \
+      --max-time "$CURL_MAX_TIME" \
+      https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
 }
 
 upsert_line() {
@@ -143,7 +147,8 @@ install_managed_file() {
   local tmp
 
   tmp="$(mktemp)"
-  curl -fsSL "$url" -o "$tmp"
+  curl -fsSL --connect-timeout "$CURL_CONNECT_TIMEOUT" \
+    --max-time "$CURL_MAX_TIME" "$url" -o "$tmp"
   if [ -f "$target" ] && ! cmp -s "$tmp" "$target"; then
     backup_file "$target"
   fi
