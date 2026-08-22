@@ -91,7 +91,7 @@ path.write_text("\n".join(existing for existing in lines if existing != line).rs
 PY
 }
 
-ensure_zshrc_source_order() {
+ensure_omz_source_order() {
   local file="$1"
   python3 - "$file" <<'PY'
 from pathlib import Path
@@ -105,24 +105,12 @@ source_lines = [
     'source "$ZSH/oh-my-zsh.sh"',
     '[ -f "$ZSH/oh-my-zsh.sh" ] && source "$ZSH/oh-my-zsh.sh"',
 ]
-local_source = '[ -f "$HOME/.zshrc.local" ] && source "$HOME/.zshrc.local"'
-local_source_lines = {
-    local_source,
-    'source "$HOME/.zshrc.local"',
-    'source $HOME/.zshrc.local',
-    'source ~/.zshrc.local',
-}
-lines = [line for line in lines if line.strip() not in local_source_lines]
-source_index = next(
-    (index for index, line in enumerate(lines) if line.strip() in source_lines),
-    None,
-)
-if source_index is None:
-    if lines and lines[-1] != "":
-        lines.append("")
-    lines.extend([local_source, 'source $ZSH/oh-my-zsh.sh'])
-else:
-    lines.insert(source_index, local_source)
+if any(line.strip() in source_lines for line in lines):
+    path.write_text("\n".join(lines).rstrip() + "\n")
+    sys.exit(0)
+if lines and lines[-1] != "":
+    lines.append("")
+lines.append('source $ZSH/oh-my-zsh.sh')
 path.write_text("\n".join(lines).rstrip() + "\n")
 PY
 }
@@ -135,7 +123,7 @@ patch_zshrc() {
   upsert_line "$zshrc" 'ZSH_THEME=' 'ZSH_THEME="jodok"'
   upsert_line "$zshrc" "zstyle ':omz:update' mode" "zstyle ':omz:update' mode auto"
   upsert_line "$zshrc" 'COMPLETION_WAITING_DOTS=' 'COMPLETION_WAITING_DOTS="true"'
-  ensure_zshrc_source_order "$zshrc"
+  ensure_omz_source_order "$zshrc"
   remove_exact_line "$zshrc" 'PROMPT="%{$fg[red]%}%m %{$reset_color%}${PROMPT}"'
 
   log "patched $zshrc"
@@ -205,7 +193,7 @@ main() {
 
   install_agent_rules
 
-  touch "$HOME/.zshrc.local" "$HOME/.zshenv.local"
+  touch "$HOME/.zshrc.local" "$HOME/.zshenv.local" "$HOME/.oh-my-jodok.zsh"
   patch_zshrc
 
   if [ -n "${OH_MY_JODOK_INSTALL_COMMIT:-}" ]; then

@@ -4,9 +4,14 @@ _oh_my_jodok_update_check() {
   local update_mode=auto
   local update_days=13
   local updater
+  local config="${OH_MY_JODOK_CONFIG:-$HOME/.oh-my-jodok.zsh}"
 
-  zstyle -s ':omj:update' mode update_mode || true
-  zstyle -s ':omj:update' frequency update_days || true
+  if [[ -r "$config" ]]; then
+    source "$config"
+  fi
+
+  zstyle -s ':omj:update' mode update_mode || update_mode=auto
+  zstyle -s ':omj:update' frequency update_days || update_days=13
 
   if [[ "$update_mode" == auto ]]; then
     updater="${ZSH_CUSTOM:-${ZSH:-$HOME/.oh-my-zsh}/custom}/update.sh"

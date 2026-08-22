@@ -74,7 +74,12 @@ export PATH="$TEST_DIR/bin:$PATH"
 unset ZSH ZSH_CUSTOM
 
 printf 'local aliases\n' > "$HOME/.oh-my-zsh/custom/aliases.zsh"
-printf 'source $ZSH/oh-my-zsh.sh\n' > "$HOME/.zshrc"
+cat > "$HOME/.zshrc" <<'EOF'
+if [[ -n "$HOST" ]]; then
+  source "$HOME/.zshrc.local"
+fi
+source $ZSH/oh-my-zsh.sh
+EOF
 
 "$ROOT_DIR/install.sh" >/dev/null
 printf 'second local aliases\n' > "$HOME/.oh-my-zsh/custom/aliases.zsh"
@@ -86,10 +91,10 @@ test "$(sed -n '1p' "$HOME/.oh-my-zsh/custom/aliases.zsh.bak.1")" = 'second loca
 cmp "$HOME/.oh-my-zsh/custom/aliases.zsh" "$ROOT_DIR/zsh/aliases.zsh"
 test -f "$HOME/.oh-my-zsh/custom/update-check.zsh"
 test -L "$HOME/.codex/AGENTS.md"
+test -f "$HOME/.oh-my-jodok.zsh"
 
-local_line="$(grep -nF '[ -f "$HOME/.zshrc.local" ] && source "$HOME/.zshrc.local"' "$HOME/.zshrc" | cut -d: -f1)"
-omz_line="$(grep -nF 'source $ZSH/oh-my-zsh.sh' "$HOME/.zshrc" | cut -d: -f1)"
-test "$(grep -Fc '[ -f "$HOME/.zshrc.local" ] && source "$HOME/.zshrc.local"' "$HOME/.zshrc")" = 1
-test "$local_line" -lt "$omz_line"
+grep -Fq 'if [[ -n "$HOST" ]]; then' "$HOME/.zshrc"
+test "$(grep -Fc 'source "$HOME/.zshrc.local"' "$HOME/.zshrc")" = 1
+test "$(grep -Fc 'source $ZSH/oh-my-zsh.sh' "$HOME/.zshrc")" = 1
 
 printf 'install tests passed\n'

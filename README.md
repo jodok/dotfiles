@@ -27,7 +27,6 @@ The installer is idempotent and will:
   - `ZSH_THEME="jodok"`
   - `zstyle ':omz:update' mode auto`
   - `COMPLETION_WAITING_DOTS="true"`
-  - `[ -f "$HOME/.zshrc.local" ] && source "$HOME/.zshrc.local"`
   - `source $ZSH/oh-my-zsh.sh`
   - no legacy host-prepend `PROMPT=...${PROMPT}` line
 
@@ -47,7 +46,7 @@ Interactive shells also check for a new `main` revision every 13 days. The
 check is local until it is due; when GitHub reports a new revision,
 oh-my-jodok automatically runs the idempotent installer from that exact
 commit. To change the interval or disable automatic updates, add one of these
-to `~/.zshrc.local`:
+to `~/.oh-my-jodok.zsh`:
 
 ```zsh
 zstyle ':omj:update' frequency 7
@@ -80,6 +79,7 @@ then re-run the installer (or `oh-my-jodok`) to roll them out.
 ## Local overrides
 
 Optional local files stay outside git:
+- `~/.oh-my-jodok.zsh` (oh-my-jodok update settings)
 - `~/.zshrc.local`
 - `~/.zshenv.local`
 
