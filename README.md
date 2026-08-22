@@ -26,6 +26,7 @@ The installer is idempotent and will:
   - `ZSH_THEME="jodok"`
   - `zstyle ':omz:update' mode auto`
   - `COMPLETION_WAITING_DOTS="true"`
+  - `[ -f "$HOME/.zshrc.local" ] && source "$HOME/.zshrc.local"`
   - `source $ZSH/oh-my-zsh.sh`
   - no legacy host-prepend `PROMPT=...${PROMPT}` line
 

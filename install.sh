@@ -40,13 +40,6 @@ ensure_oh_my_zsh() {
     sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
 }
 
-fetch_file() {
-  local url="$1"
-  local target="$2"
-  mkdir -p "$(dirname "$target")"
-  curl -fsSL "$url" -o "$target"
-}
-
 upsert_line() {
   local file="$1"
   local key="$2"
@@ -94,7 +87,7 @@ path.write_text("\n".join(existing for existing in lines if existing != line).rs
 PY
 }
 
-ensure_omz_source_order() {
+ensure_zshrc_source_order() {
   local file="$1"
   python3 - "$file" <<'PY'
 from pathlib import Path
@@ -108,12 +101,24 @@ source_lines = [
     'source "$ZSH/oh-my-zsh.sh"',
     '[ -f "$ZSH/oh-my-zsh.sh" ] && source "$ZSH/oh-my-zsh.sh"',
 ]
-if any(line.strip() in source_lines for line in lines):
-    path.write_text("\n".join(lines).rstrip() + "\n")
-    sys.exit(0)
-if lines and lines[-1] != "":
-    lines.append("")
-lines.append('source $ZSH/oh-my-zsh.sh')
+local_source = '[ -f "$HOME/.zshrc.local" ] && source "$HOME/.zshrc.local"'
+local_source_lines = {
+    local_source,
+    'source "$HOME/.zshrc.local"',
+    'source $HOME/.zshrc.local',
+    'source ~/.zshrc.local',
+}
+lines = [line for line in lines if line.strip() not in local_source_lines]
+source_index = next(
+    (index for index, line in enumerate(lines) if line.strip() in source_lines),
+    None,
+)
+if source_index is None:
+    if lines and lines[-1] != "":
+        lines.append("")
+    lines.extend([local_source, 'source $ZSH/oh-my-zsh.sh'])
+else:
+    lines.insert(source_index, local_source)
 path.write_text("\n".join(lines).rstrip() + "\n")
 PY
 }
@@ -126,7 +131,7 @@ patch_zshrc() {
   upsert_line "$zshrc" 'ZSH_THEME=' 'ZSH_THEME="jodok"'
   upsert_line "$zshrc" "zstyle ':omz:update' mode" "zstyle ':omz:update' mode auto"
   upsert_line "$zshrc" 'COMPLETION_WAITING_DOTS=' 'COMPLETION_WAITING_DOTS="true"'
-  ensure_omz_source_order "$zshrc"
+  ensure_zshrc_source_order "$zshrc"
   remove_exact_line "$zshrc" 'PROMPT="%{$fg[red]%}%m %{$reset_color%}${PROMPT}"'
 
   log "patched $zshrc"
@@ -174,11 +179,11 @@ main() {
 
   mkdir -p "$THEMES_DIR" "$CUSTOM_DIR"
 
-  fetch_file "$THEME_URL" "$THEMES_DIR/jodok.zsh-theme"
-  fetch_file "$EXPORTS_URL" "$CUSTOM_DIR/exports.zsh"
-  fetch_file "$ALIASES_URL" "$CUSTOM_DIR/aliases.zsh"
-  fetch_file "$UPDATE_URL" "$CUSTOM_DIR/update.sh"
-  fetch_file "$UPDATE_CHECK_URL" "$CUSTOM_DIR/update-check.zsh"
+  install_managed_file "$THEME_URL" "$THEMES_DIR/jodok.zsh-theme"
+  install_managed_file "$EXPORTS_URL" "$CUSTOM_DIR/exports.zsh"
+  install_managed_file "$ALIASES_URL" "$CUSTOM_DIR/aliases.zsh"
+  install_managed_file "$UPDATE_URL" "$CUSTOM_DIR/update.sh"
+  install_managed_file "$UPDATE_CHECK_URL" "$CUSTOM_DIR/update-check.zsh"
   chmod +x "$CUSTOM_DIR/update.sh"
 
   install_agent_rules
