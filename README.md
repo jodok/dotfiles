@@ -16,6 +16,7 @@ The installer is idempotent and will:
 - install `exports.zsh` to `~/.oh-my-zsh/custom/exports.zsh`
 - install `aliases.zsh` to `~/.oh-my-zsh/custom/aliases.zsh`
 - install `update.sh` to `~/.oh-my-zsh/custom/update.sh`
+- install `update-check.zsh` to `~/.oh-my-zsh/custom/update-check.zsh`
 - install `agents/global-rules.md` to `~/.agents/global-rules.md`
 - install `agents/claude.md` to `~/.claude/CLAUDE.md`
 - link `~/.codex/AGENTS.md` to `~/.agents/global-rules.md`
@@ -40,12 +41,24 @@ Equivalent to:
 ~/.oh-my-zsh/custom/update.sh
 ```
 
+Interactive shells also check for a new `main` revision every 13 days. The
+check is local until it is due; when GitHub reports a new revision,
+oh-my-jodok automatically runs the idempotent installer from that exact
+commit. To change the interval or disable automatic updates, add one of these
+to `~/.zshrc.local`:
+
+```zsh
+zstyle ':omj:update' frequency 7
+zstyle ':omj:update' mode disabled
+```
+
 ## Layout on target machine
 
 ```text
 ~/.oh-my-zsh/custom/
   aliases.zsh
   exports.zsh
+  update-check.zsh
   update.sh
   themes/
     jodok.zsh-theme
@@ -70,6 +83,7 @@ Optional local files stay outside git:
 
 ## Notes
 
-- No daemon, no background updater.
+- No daemon or background job; the due check runs during interactive shell
+  startup.
 - Uses standard oh-my-zsh auto-loading for `custom/*.zsh`.
 - Secrets do not belong in this repo.

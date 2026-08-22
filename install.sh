@@ -11,6 +11,7 @@ THEME_URL="$RAW_BASE/oh-my-zsh/themes/jodok.zsh-theme"
 EXPORTS_URL="$RAW_BASE/zsh/exports.zsh"
 ALIASES_URL="$RAW_BASE/zsh/aliases.zsh"
 UPDATE_URL="$RAW_BASE/update.sh"
+UPDATE_CHECK_URL="$RAW_BASE/zsh/update-check.zsh"
 AGENT_RULES_URL="$RAW_BASE/agents/global-rules.md"
 CLAUDE_MD_URL="$RAW_BASE/agents/claude.md"
 
@@ -177,12 +178,19 @@ main() {
   fetch_file "$EXPORTS_URL" "$CUSTOM_DIR/exports.zsh"
   fetch_file "$ALIASES_URL" "$CUSTOM_DIR/aliases.zsh"
   fetch_file "$UPDATE_URL" "$CUSTOM_DIR/update.sh"
+  fetch_file "$UPDATE_CHECK_URL" "$CUSTOM_DIR/update-check.zsh"
   chmod +x "$CUSTOM_DIR/update.sh"
 
   install_agent_rules
 
   touch "$HOME/.zshrc.local" "$HOME/.zshenv.local"
   patch_zshrc
+
+  if [ -n "${OH_MY_JODOK_INSTALL_COMMIT:-}" ]; then
+    "$CUSTOM_DIR/update.sh" --record "$OH_MY_JODOK_INSTALL_COMMIT"
+  elif ! "$CUSTOM_DIR/update.sh" --record-current; then
+    log "could not record the installed revision; the next shell will retry"
+  fi
 
   log "done"
   log "restart your shell or run: source ~/.zshrc"
