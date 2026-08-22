@@ -110,13 +110,14 @@ auto_update() {
     return "$due_status"
   fi
 
-  write_state "$LAST_CHECK_FILE" "$(date +%s)"
   if ! remote_sha="$(fetch_remote_sha)"; then
+    write_state "$LAST_CHECK_FILE" "$(date +%s)"
     return 0
   fi
 
   installed_sha="$(read_state "$LAST_APPLIED_FILE")"
   if [ "$remote_sha" = "$installed_sha" ]; then
+    write_state "$LAST_CHECK_FILE" "$(date +%s)"
     return 0
   fi
 

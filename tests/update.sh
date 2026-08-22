@@ -49,6 +49,10 @@ cat > "$TEST_DIR/installer.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [ "${FAKE_INSTALL_FAIL:-0}" = 1 ]; then
+  exit 1
+fi
+
 count=0
 if [ -f "$FAKE_INSTALL_COUNT" ]; then
   count="$(sed -n '1p' "$FAKE_INSTALL_COUNT")"
@@ -81,8 +85,23 @@ printf '0\n' > "$TEST_DIR/state/last-check"
 test "$(sed -n '1p' "$FAKE_INSTALL_COUNT")" = 2
 test "$(sed -n '1p' "$TEST_DIR/state/last-applied")" = "$FAKE_REMOTE_SHA"
 
-"$ROOT_DIR/update.sh"
+export FAKE_REMOTE_SHA=3333333333333333333333333333333333333333
+export FAKE_INSTALL_FAIL=1
+printf '0\n' > "$TEST_DIR/state/last-check"
+if "$ROOT_DIR/update.sh" --auto >/dev/null 2>&1; then
+  echo "failed automatic install unexpectedly succeeded" >&2
+  exit 1
+fi
+test "$(sed -n '1p' "$TEST_DIR/state/last-check")" = 0
+test "$(sed -n '1p' "$FAKE_INSTALL_COUNT")" = 2
+
+unset FAKE_INSTALL_FAIL
+"$ROOT_DIR/update.sh" --auto
 test "$(sed -n '1p' "$FAKE_INSTALL_COUNT")" = 3
+test "$(sed -n '1p' "$TEST_DIR/state/last-applied")" = "$FAKE_REMOTE_SHA"
+
+"$ROOT_DIR/update.sh"
+test "$(sed -n '1p' "$FAKE_INSTALL_COUNT")" = 4
 
 if "$ROOT_DIR/update.sh" --unknown >/dev/null 2>&1; then
   echo "unknown option unexpectedly succeeded" >&2
