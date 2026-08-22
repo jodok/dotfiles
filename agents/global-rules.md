@@ -1,3 +1,7 @@
+<!-- Source of truth: jodok/dotfiles agents/global-rules.md — installed to
+~/.agents/global-rules.md by install.sh. Edit the repo source, then deploy it;
+do not edit only the installed copy. -->
+
 # Global agent rules
 
 These rules apply to every repository and every coding agent. They are
@@ -28,14 +32,26 @@ Code imports them from `~/.claude/CLAUDE.md`.
   `gh pr merge` every time rather than trusting it to happen by itself, and
   remove the local branch and any worktree too. A squash-merged branch
   reports itself as "ahead of main" forever, so leftovers read as unfinished
-  work months later and cost someone a real investigation.
+  work months later and cost someone a real investigation. Squash-merging is
+  also why `git branch -d` refuses and `--merged` never lists these: the
+  branch tip is not an ancestor of `main`. The check that tells the truth is
+  an empty `git diff origin/main <branch>`, and `-D` is what deletes. A
+  worktree pins its branch, so `git worktree remove` has to come first.
 - **Repositories must set `delete_branch_on_merge`.** Check it with
   `gh api repos/<owner>/<repo> --jq .delete_branch_on_merge`; if it is
   `false`, turn it on with
   `gh api -X PATCH repos/<owner>/<repo> -F delete_branch_on_merge=true`.
   The repo setting is the safety net for merges made outside the CLI — the
   web UI's merge button honors it — so both belong in place, not one or the
-  other.
+  other. It is a per-repository flag with no org-wide default, so a new repo
+  starts `false`: when you check it, check every repo in the org, not only the
+  one you are working in.
+- **Sweeping stale branches is a whole-org job.** A branch is safe to delete
+  only when its pull request is `MERGED`. Leave `OPEN` ones alone; leave
+  `CLOSED`-without-merge alone, because that work never landed; and leave
+  branches with no pull request at all alone, because their provenance is
+  unknown. Skip vendored forks of other people's projects entirely — their
+  branches are not ours to judge.
 - **Merge your own PR yourself once everything is green** — required checks
   passed, review gate approved, every review thread resolved. Do not park a
   green PR waiting for Jodok to press the button, and do not ask whether to
@@ -57,19 +73,22 @@ Code imports them from `~/.claude/CLAUDE.md`.
 
 ## Picking the right models for workflows and subagents
 
-Rankings, higher = better. Cost reflects what I actually pay — both OpenAI
-and Claude (Max plan) are flat-rate subscriptions with generous limits, so
-cost differences between Claude models reflect how fast each burns the Max
-quota, not list price. Intelligence is how hard a problem you can hand the
-model unsupervised. Taste covers UI/UX, code quality, API design, and copy.
+Rankings, higher = better. Cost is an availability score, not API list
+price. Current plan headroom is Codex 20x versus Claude 5x, so treat Codex as
+roughly four times the included capacity and prefer it when its capability
+and taste clear the bar. Codex-Spark has an additional, separate quota lane.
+Claude cost differences reflect how fast each model burns the smaller Max
+quota. Intelligence is how hard a problem you can hand the model
+unsupervised. Taste covers UI/UX, code quality, API design, and copy.
 
-| model     | cost | intelligence | taste |
-|-----------|------|--------------|-------|
-| haiku-4.5 | 10   | 3            | 4     |
-| gpt-5.5   | 9    | 8            | 5     |
-| sonnet-5  | 9    | 5            | 7     |
-| opus-4.8  | 7    | 8            | 8     |
-| fable-5   | 5    | 9            | 9     |
+| model                 | cost | intelligence | taste |
+|-----------------------|------|--------------|-------|
+| gpt-5.3-codex-spark   | 10   | 4            | 4     |
+| gpt-5.5               | 10   | 8            | 5     |
+| haiku-4.5             | 8    | 3            | 4     |
+| sonnet-5              | 7    | 5            | 7     |
+| opus-4.8              | 5    | 8            | 8     |
+| fable-5               | 3    | 9            | 9     |
 
 How to apply:
 
@@ -79,12 +98,21 @@ How to apply:
   costs less than shipping mediocre work.
 - Cost is a tie-breaker only; when axes conflict for anything that ships,
   intelligence > taste > cost.
+- Use gpt-5.3-codex-spark first for narrow, well-specified work whose result
+  is quick to review: exact UI adjustments, localized fixes, straightforward
+  tests, boilerplate, mechanical refactors, and quick repository questions.
+  It is the fastest Codex model and draws from a separate quota, but is
+  text-only and less capable. Do not use it for architecture, ambiguous
+  debugging, security work, complex migrations, unfamiliar cross-cutting
+  changes, or judgment-heavy UI/copy. Treat it as opportunistic research-
+  preview capacity; workflows must not depend on its continued availability.
 - Bulk/mechanical work (clear-spec implementation, data analysis,
-  migrations): gpt-5.5 or sonnet-5, both effectively flat-rate. Prefer
-  gpt-5.5 for token-heavy grinds (preserves Max quota), sonnet-5 when the
-  output should read well.
-- Unsupervised medium-hard chunks: opus-4.8 is a solid default now
-  (intelligence 8 at cost 7), no longer a splurge.
+  migrations): prefer gpt-5.5 for token-heavy grinds because the Codex 20x
+  plan has substantially more headroom. Use sonnet-5 when the output needs
+  its stronger taste, despite the smaller Claude 5x quota.
+- Unsupervised medium-hard chunks: opus-4.8 is a solid default when its
+  intelligence and taste justify spending the smaller Claude pool
+  (intelligence 8 at cost 5).
 - Anything user-facing (UI, copy, API design) needs taste ≥ 7.
 - Reviews of plans and implementations: fable-5 or opus-4.8, optionally
   gpt-5.5 as an extra independent perspective.
@@ -93,10 +121,10 @@ How to apply:
   checks, template boilerplate). Never for anything needing judgment.
 - Supervisors (fable-5 especially) delegate DOWN by default: if a task is
   fully specified, hand it to the cheapest row that clears the bar — even
-  when doing it inline feels faster. Small single-file fixes and doc edits
-  are sonnet/haiku work. Inline fable work is reserved for architecture,
-  ambiguous judgment, delegation specs, integration, review-of-reviews,
-  and secret handling.
+  when doing it inline feels faster. Fully specified single-file fixes and
+  doc edits are Spark/haiku work; use sonnet when taste matters. Inline fable
+  work is reserved for architecture, ambiguous judgment, delegation specs,
+  integration, review-of-reviews, and secret handling.
 - If a task calls for a model above your own row (for example taste ≥ 7
   work while you run as gpt-5.5), say so and recommend handing it over
   instead of shipping below the bar.
