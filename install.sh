@@ -3,14 +3,17 @@ set -euo pipefail
 
 REPO_SLUG="${REPO_SLUG:-jodok/dotfiles}"
 BRANCH="${BRANCH:-main}"
+CURL_CONNECT_TIMEOUT="${OH_MY_JODOK_CURL_CONNECT_TIMEOUT:-3}"
+CURL_MAX_TIME="${OH_MY_JODOK_CURL_MAX_TIME:-15}"
 ZSH_DIR="${ZSH:-$HOME/.oh-my-zsh}"
-CUSTOM_DIR="$ZSH_DIR/custom"
+CUSTOM_DIR="${ZSH_CUSTOM:-$ZSH_DIR/custom}"
 THEMES_DIR="$CUSTOM_DIR/themes"
 RAW_BASE="https://raw.githubusercontent.com/${REPO_SLUG}/${BRANCH}"
 THEME_URL="$RAW_BASE/oh-my-zsh/themes/jodok.zsh-theme"
 EXPORTS_URL="$RAW_BASE/zsh/exports.zsh"
 ALIASES_URL="$RAW_BASE/zsh/aliases.zsh"
 UPDATE_URL="$RAW_BASE/update.sh"
+UPDATE_CHECK_URL="$RAW_BASE/zsh/update-check.zsh"
 AGENT_RULES_URL="$RAW_BASE/agents/global-rules.md"
 CLAUDE_MD_URL="$RAW_BASE/agents/claude.md"
 
@@ -36,14 +39,9 @@ ensure_oh_my_zsh() {
 
   log "installing oh-my-zsh"
   RUNZSH=no CHSH=no KEEP_ZSHRC=yes \
-    sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
-}
-
-fetch_file() {
-  local url="$1"
-  local target="$2"
-  mkdir -p "$(dirname "$target")"
-  curl -fsSL "$url" -o "$target"
+    sh -c "$(curl -fsSL --connect-timeout "$CURL_CONNECT_TIMEOUT" \
+      --max-time "$CURL_MAX_TIME" \
+      https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
 }
 
 upsert_line() {
@@ -119,9 +117,15 @@ PY
 
 patch_zshrc() {
   local zshrc="$HOME/.zshrc"
+  local quoted_zsh_dir
   touch "$zshrc"
 
-  upsert_line "$zshrc" 'export ZSH=' 'export ZSH="$HOME/.oh-my-zsh"'
+  if [ "$ZSH_DIR" = "$HOME/.oh-my-zsh" ]; then
+    quoted_zsh_dir='"$HOME/.oh-my-zsh"'
+  else
+    printf -v quoted_zsh_dir '%q' "$ZSH_DIR"
+  fi
+  upsert_line "$zshrc" 'export ZSH=' "export ZSH=$quoted_zsh_dir"
   upsert_line "$zshrc" 'ZSH_THEME=' 'ZSH_THEME="jodok"'
   upsert_line "$zshrc" "zstyle ':omz:update' mode" "zstyle ':omz:update' mode auto"
   upsert_line "$zshrc" 'COMPLETION_WAITING_DOTS=' 'COMPLETION_WAITING_DOTS="true"'
@@ -137,15 +141,29 @@ install_managed_file() {
   local tmp
 
   tmp="$(mktemp)"
-  curl -fsSL "$url" -o "$tmp"
+  curl -fsSL --connect-timeout "$CURL_CONNECT_TIMEOUT" \
+    --max-time "$CURL_MAX_TIME" "$url" -o "$tmp"
   if [ -f "$target" ] && ! cmp -s "$tmp" "$target"; then
-    cp "$target" "$target.bak"
-    log "backed up $target to $target.bak"
+    backup_file "$target"
   fi
   mkdir -p "$(dirname "$target")"
   mv "$tmp" "$target"
   chmod 644 "$target"
   log "installed $target"
+}
+
+backup_file() {
+  local target="$1"
+  local backup="$target.bak"
+  local suffix=1
+
+  while [ -e "$backup" ]; do
+    backup="$target.bak.$suffix"
+    suffix=$((suffix + 1))
+  done
+
+  cp "$target" "$backup"
+  log "backed up $target to $backup"
 }
 
 install_agent_rules() {
@@ -157,8 +175,7 @@ install_agent_rules() {
 
   mkdir -p "$HOME/.codex"
   if [ -e "$codex_agents" ] && [ ! -L "$codex_agents" ] && [ -s "$codex_agents" ]; then
-    cp "$codex_agents" "$codex_agents.bak"
-    log "backed up $codex_agents to $codex_agents.bak"
+    backup_file "$codex_agents"
   fi
   ln -sfn "$rules_target" "$codex_agents"
   log "linked $codex_agents -> $rules_target"
@@ -173,16 +190,23 @@ main() {
 
   mkdir -p "$THEMES_DIR" "$CUSTOM_DIR"
 
-  fetch_file "$THEME_URL" "$THEMES_DIR/jodok.zsh-theme"
-  fetch_file "$EXPORTS_URL" "$CUSTOM_DIR/exports.zsh"
-  fetch_file "$ALIASES_URL" "$CUSTOM_DIR/aliases.zsh"
-  fetch_file "$UPDATE_URL" "$CUSTOM_DIR/update.sh"
+  install_managed_file "$THEME_URL" "$THEMES_DIR/jodok.zsh-theme"
+  install_managed_file "$EXPORTS_URL" "$CUSTOM_DIR/exports.zsh"
+  install_managed_file "$ALIASES_URL" "$CUSTOM_DIR/aliases.zsh"
+  install_managed_file "$UPDATE_URL" "$CUSTOM_DIR/update.sh"
+  install_managed_file "$UPDATE_CHECK_URL" "$CUSTOM_DIR/update-check.zsh"
   chmod +x "$CUSTOM_DIR/update.sh"
 
   install_agent_rules
 
-  touch "$HOME/.zshrc.local" "$HOME/.zshenv.local"
+  touch "$HOME/.zshrc.local" "$HOME/.zshenv.local" "$HOME/.oh-my-jodok.zsh"
   patch_zshrc
+
+  if [ -n "${OH_MY_JODOK_INSTALL_COMMIT:-}" ]; then
+    "$CUSTOM_DIR/update.sh" --record "$OH_MY_JODOK_INSTALL_COMMIT"
+  elif ! "$CUSTOM_DIR/update.sh" --record-current; then
+    log "could not record the installed revision; the next shell will retry"
+  fi
 
   log "done"
   log "restart your shell or run: source ~/.zshrc"
