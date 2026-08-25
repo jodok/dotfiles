@@ -71,6 +71,44 @@ Code imports them from `~/.claude/CLAUDE.md`.
 - Repository-specific rules may add constraints, but must not weaken these
   global rules.
 
+## Deployment flows
+
+Two flows exist. Which one applies is a property of the repo, not of the PR
+— check the Flow B list below before assuming Flow A.
+
+- **Flow A — bot-reviewed (default).** Applies to every repo not listed
+  under Flow B. Branch, push, open the PR ready (not draft). namche-review
+  picks it up automatically; iterate until it is green and every thread is
+  resolved, then squash-merge. The repo's own pipeline deploys from there —
+  staging automatically, production per that repo's own rules.
+- **Flow B — local review + staging-first.** Currently: `NamcheAI/sirdar`.
+  More repos opt in by being listed here, not by resembling sirdar.
+  - Branch or worktree, push as needed, and open the PR early — draft is
+    fine. The PR is the review trail, so it has to exist before the work is
+    done, not after.
+  - Test locally. When review is wanted, run the `/code-review` skill
+    locally at high effort and post its findings as a PR comment that names
+    the reviewed head SHA. Address findings, iterate. namche-review does not
+    run on these repos — there is no bot to wait for.
+  - Staging is a pre-merge iteration tool, not a deploy step: `just stage`
+    (the repo's justfile) builds an amd64 image from a clean worktree,
+    pushes it, and dispatches the infra-owned deploy interface for
+    `environment=staging`. The app repo never names hosts —
+    NamcheAI/infra's committed map owns app×env→host. Every staging deploy
+    posts a PR comment saying what staging now runs; staging is single-slot,
+    so the last writer wins.
+  - Marking the PR ready triggers CI. The `check` job is the required gate,
+    plus review-thread resolution, same bar as Flow A. Squash-merge on
+    green.
+  - Merging to main rebuilds the image from the merge commit and deploys
+    production automatically, then re-syncs staging to main. Production
+    never runs a locally-built image — the staging build above is for
+    iteration, not for shipping.
+  - Flow B repos standardise local verbs in a `justfile`; `just --list` is
+    the discovery surface (`dev`, `test`, `typecheck`, `stage`, `review`).
+  - Variations (no staging, one-line fixes) may skip the staging step; the
+    review-findings-on-PR convention still holds.
+
 ## Picking the right models for workflows and subagents
 
 Rankings, higher = better. Cost is an availability score, not API list
