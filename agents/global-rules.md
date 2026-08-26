@@ -81,6 +81,14 @@ Two flows exist. Which one applies is a property of the repo, not of the PR
   picks it up automatically; iterate until it is green and every thread is
   resolved, then squash-merge. The repo's own pipeline deploys from there —
   staging automatically, production per that repo's own rules.
+  - **When the reviewer is unavailable** (disabled, as it is since
+    2026-08-26, or erroring), Flow A does not become "merge unreviewed" and
+    it does not become "wait indefinitely". Run the `/code-review` skill
+    locally and post its findings as a PR comment naming the reviewed head
+    SHA — the Flow B convention — and gate the merge on CI plus resolved
+    threads. A reviewer-infrastructure diagnostic ("no result for this
+    generation", `executor_error`) is explicitly not a finding and not an
+    approval; never read one as either.
 - **Flow B — local review + staging-first.** Currently: `NamcheAI/sirdar`.
   More repos opt in by being listed here, not by resembling sirdar.
   - Branch or worktree, push as needed, and open the PR early — draft is
