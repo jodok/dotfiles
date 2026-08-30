@@ -8,6 +8,10 @@ These rules apply to every repository and every coding agent. They are
 installed machine-wide: Codex reads them via `~/.codex/AGENTS.md`, Claude
 Code imports them from `~/.claude/CLAUDE.md`.
 
+Keep this file limited to reusable personal defaults. Repository architecture,
+commands, lifecycle, review gates, and deployment policy belong in that
+repository's `AGENTS.md`.
+
 ## Git and pull requests
 
 - Author every commit as `Jodok Batlogg <jodok@batlogg.com>`. Agents and
@@ -22,10 +26,9 @@ Code imports them from `~/.claude/CLAUDE.md`.
   message on `main`.
 - Open the PR as soon as the work is reviewable — as a draft if it is still
   in progress. After creating it, send the exact clickable PR URL.
-- Codex auto-reviews every PR (ChatGPT Codex Connector). Address its
-  findings and resolve all review threads before merging — branch
-  protection enforces the resolution. Mention `@codex review` to re-request
-  a review after larger follow-up pushes.
+- Follow the repository's review policy. A reviewer error or missing result is
+  neither a finding nor an approval; do not merge until the repository's real
+  review gate is satisfied.
 - Keep PRs small and single-topic; split unrelated changes.
 - Squash-merge only, with required checks green.
 - **Delete the branch when it merges.** Pass `--delete-branch` to
@@ -70,52 +73,6 @@ Code imports them from `~/.claude/CLAUDE.md`.
   never rewrite `main` or someone else's branch.
 - Repository-specific rules may add constraints, but must not weaken these
   global rules.
-
-## Deployment flows
-
-Two flows exist. Which one applies is a property of the repo, not of the PR
-— check the Flow B list below before assuming Flow A.
-
-- **Flow A — bot-reviewed (default).** Applies to every repo not listed
-  under Flow B. Branch, push, open the PR ready (not draft). namche-review
-  picks it up automatically; iterate until it is green and every thread is
-  resolved, then squash-merge. The repo's own pipeline deploys from there —
-  staging automatically, production per that repo's own rules.
-  - **When the reviewer is unavailable** (disabled, as it is since
-    2026-08-26, or erroring), Flow A does not become "merge unreviewed" and
-    it does not become "wait indefinitely". Run the `/code-review` skill
-    locally and post its findings as a PR comment naming the reviewed head
-    SHA — the Flow B convention — and gate the merge on CI plus resolved
-    threads. A reviewer-infrastructure diagnostic ("no result for this
-    generation", `executor_error`) is explicitly not a finding and not an
-    approval; never read one as either.
-- **Flow B — local review + staging-first.** Currently: `NamcheAI/sirdar`.
-  More repos opt in by being listed here, not by resembling sirdar.
-  - Branch or worktree, push as needed, and open the PR early — draft is
-    fine. The PR is the review trail, so it has to exist before the work is
-    done, not after.
-  - Test locally. When review is wanted, run the `/code-review` skill
-    locally at high effort and post its findings as a PR comment that names
-    the reviewed head SHA. Address findings, iterate. namche-review does not
-    run on these repos — there is no bot to wait for.
-  - Staging is a pre-merge iteration tool, not a deploy step: `just stage`
-    (the repo's justfile) builds an amd64 image from a clean worktree,
-    pushes it, and dispatches the infra-owned deploy interface for
-    `environment=staging`. The app repo never names hosts —
-    NamcheAI/infra's committed map owns app×env→host. Every staging deploy
-    posts a PR comment saying what staging now runs; staging is single-slot,
-    so the last writer wins.
-  - Marking the PR ready triggers CI. The `check` job is the required gate,
-    plus review-thread resolution, same bar as Flow A. Squash-merge on
-    green.
-  - Merging to main rebuilds the image from the merge commit and deploys
-    production automatically, then re-syncs staging to main. Production
-    never runs a locally-built image — the staging build above is for
-    iteration, not for shipping.
-  - Flow B repos standardise local verbs in a `justfile`; `just --list` is
-    the discovery surface (`dev`, `test`, `typecheck`, `stage`, `review`).
-  - Variations (no staging, one-line fixes) may skip the staging step; the
-    review-findings-on-PR convention still holds.
 
 ## Picking the right models for workflows and subagents
 

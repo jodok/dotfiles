@@ -72,10 +72,13 @@ zstyle ':omj:update' mode disabled
 
 ## Agent rules
 
-`agents/global-rules.md` holds the git/PR workflow rules every coding agent
-must follow; `agents/claude.md` adds Claude-Code-specific guidance (model
-selection). Both are deployed by the installer — edit them in this repo,
-then re-run the installer (or `oh-my-jodok`) to roll them out.
+`agents/global-rules.md` holds reusable personal defaults every coding agent
+must follow. Repository architecture, commands, lifecycle, review gates, and
+deployment policy live in each repository's `AGENTS.md`, not here.
+`agents/claude.md` is the minimal Claude Code adapter: it imports the shared
+defaults and adds only Claude-specific mechanics. Both files are deployed by
+the installer — edit them in this repo, then re-run the installer (or
+`oh-my-jodok`) to roll them out.
 
 ## Local overrides
 
