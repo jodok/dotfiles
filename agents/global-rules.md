@@ -17,6 +17,28 @@ repository's `AGENTS.md`.
 - Author every commit as `Jodok Batlogg <jodok@batlogg.com>`. Agents and
   bots never take authorship; they credit themselves with a
   `Co-Authored-By:` trailer instead.
+- **Agents sign and push with their own keys, from 1Password, through their own
+  agent.** Run git as `GIT_CONFIG_GLOBAL=~/.claude/gitconfig git …` and that is
+  the whole setup: commits are signed by `claude-signing`, pushes authenticate
+  as `claude-auth`, both held in 1Password and loaded into a plain `ssh-agent`
+  at `~/.claude/run/agent.sock` by `~/.claude/bin/claude-ssh-agent`. No private
+  key is written to disk — `op read` streams each one into `ssh-add -` — there
+  are no approval prompts, and it does not depend on the 1Password desktop
+  agent, which prompts and fails intermittently. The identity is separate, so it
+  can be revoked on GitHub without touching Jodok's own keys.
+  - Re-run `~/.claude/bin/claude-ssh-agent` if the socket is missing; it is
+    idempotent and reloads only when a key is absent. It needs `op` signed in.
+  - Four things this rests on, each of which cost a debugging round. `op read`
+    must use `?ssh-format=openssh`, because the default field is PKCS#8 and
+    `ssh-add` rejects it, and the output needs a trailing newline appended.
+    `~/.ssh/config` pins github.com to the 1Password agent with
+    `IdentitiesOnly yes`, so an agent-held key it does not list is never
+    offered — hence git's own `~/.claude/ssh_config`. Signing runs `ssh-keygen`,
+    which takes its agent from `SSH_AUTH_SOCK` and not from `core.sshCommand`,
+    so `gpg.ssh.program` points at a shim that pins the socket; without it
+    commits fail with `Couldn't find key in agent?`. And `gpg.ssh.allowedSignersFile`
+    must list `<principal> <keytype> <key>` — omit the key type and verification
+    fails while signing still appears to work.
 - `main` is protected: no direct pushes, no force pushes, linear history.
   Every change lands through a pull request.
 - Branch names: `<agent>/<topic>` for agent work (`claude/...`,
