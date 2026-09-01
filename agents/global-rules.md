@@ -18,8 +18,14 @@ repository's `AGENTS.md`.
   bots never take authorship; they credit themselves with a
   `Co-Authored-By:` trailer instead.
 - **Agents sign and push with their own keys, from 1Password, through their own
-  agent.** Run git as `GIT_CONFIG_GLOBAL=~/.claude/gitconfig git …` and that is
-  the whole setup: commits are signed by `claude-signing`, pushes authenticate
+  agent.** The installer sets `env.GIT_CONFIG_GLOBAL` for Claude Code sessions, so
+  git already uses it — nothing to pass by hand. Do **not** force that variable
+  when it is absent: the installer deliberately leaves it unset until both keys are
+  provisioned, and the config it names sets `commit.gpgsign` with a signing key that
+  would not exist, so forcing it turns a skipped 1Password step into a git that
+  cannot commit. If `~/.claude/claude-signing.pub` is missing, provisioning was
+  skipped — run `op signin` and `install.sh` again rather than working around it.
+  What the setup gives you: commits are signed by `claude-signing`, pushes authenticate
   as `claude-auth`, both held in 1Password and loaded into a plain `ssh-agent`
   at `~/.claude/run/agent.sock` by `~/.claude/bin/claude-ssh-agent`. No private
   key is written to disk — `op read` streams each one into `ssh-add -` — there

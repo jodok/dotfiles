@@ -232,8 +232,11 @@ install_claude_settings() {
   # Only switch git over once the identity actually exists. The config it selects sets
   # commit.gpgsign and a signing key; without the key every commit fails, which would
   # turn "1Password was locked, so we skipped a step" into "git no longer works".
-  if [ ! -f "$HOME/.claude/claude-signing.pub" ]; then
-    log "no signing key installed yet; leaving settings.json alone (run install again once 'op signin' works)"
+  # Both halves, not just the signing one: the loader and the ssh config each need
+  # claude-auth, so activating on the signing key alone would redirect pushes to an
+  # identity that cannot be loaded.
+  if [ ! -f "$HOME/.claude/claude-signing.pub" ] || [ ! -f "$HOME/.claude/claude-auth.pub" ]; then
+    log "identity incomplete (need both claude-signing.pub and claude-auth.pub); leaving settings.json alone"
     return
   fi
   # Not silenced. If the vault is locked, every commit in the session fails with

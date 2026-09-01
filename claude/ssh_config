@@ -5,10 +5,16 @@
 # `IdentitiesOnly yes` and a specific IdentityFile, so an agent-held key it does not
 # list is never offered. ssh takes the FIRST value it sees for each keyword, so this
 # block wins for github.com and the Include below supplies every other host unchanged.
+# `IdentityFile` is additive, so the Include below can append the personal GitHub
+# identity to this block -- and with `IdentitiesOnly no` any on-disk default key is
+# eligible too. Either could authenticate before claude-auth, pushing as the human
+# account and defeating an identity that is supposed to be separately revocable.
+# Naming the auth key and setting `IdentitiesOnly yes` makes it the only one offered.
 Host github.com
 	HostName github.com
 	User git
 	IdentityAgent ~/.claude/run/agent.sock
-	IdentitiesOnly no
+	IdentityFile ~/.claude/claude-auth.pub
+	IdentitiesOnly yes
 
 Include ~/.ssh/config

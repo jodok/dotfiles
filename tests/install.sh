@@ -211,4 +211,27 @@ test "$(jq -r '.env.EXISTING' "$HOME/.claude/settings.json")" = 'kept'
 test "$(jq -r '.theme' "$HOME/.claude/settings.json")" = 'auto'
 grep -Fq 'claude-ssh-agent' "$HOME/.claude/settings.json"
 
+# Half an identity is not an identity: the loader and the ssh config both need the
+# auth key, so activating on the signing key alone would redirect pushes to something
+# that cannot be loaded.
+rm -f "$HOME/.claude/claude-auth.pub" "$HOME/.claude/settings.json"
+cat > "$TEST_DIR/bin/op" <<'EOF'
+#!/usr/bin/env bash
+case "$1" in
+  whoami) exit 0 ;;
+  read)
+    case "$2" in
+      *claude-auth*) exit 1 ;;
+      *) printf 'ssh-ed25519 AAAATESTKEY comment' ;;
+    esac
+    ;;
+  *) exit 1 ;;
+esac
+EOF
+chmod +x "$TEST_DIR/bin/op"
+"$ROOT_DIR/install.sh" >/dev/null
+test -f "$HOME/.claude/claude-signing.pub"
+test ! -e "$HOME/.claude/claude-auth.pub"
+test ! -e "$HOME/.claude/settings.json"
+
 printf 'install tests passed\n'
