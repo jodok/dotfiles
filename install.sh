@@ -210,6 +210,75 @@ install_claude_git_identity() {
   log "installed the agent git identity"
 }
 
+# Make the identity the default for Claude Code sessions rather than something to
+# remember per command. Without this the files install but git still falls through
+# to the personal global config, which signs through the 1Password desktop app and
+# prompts on every commit.
+#
+# settings.json is the user's file — theme, notifications, their own hooks — so this
+# merges into it and never rewrites it. Idempotent: re-running replaces only our own
+# SessionStart entry.
+install_claude_settings() {
+  local settings="$HOME/.claude/settings.json"
+  local cmd="~/.claude/bin/claude-ssh-agent 2>/dev/null || true"
+  local tmp merged
+  mkdir -p "$HOME/.claude"
+  [ -f "$settings" ] || printf '{}\n' > "$settings"
+  tmp="$(mktemp)"
+
+  if command -v jq >/dev/null 2>&1; then
+    merged=$(jq --arg cfg "$HOME/.claude/gitconfig" --arg cmd "$cmd" '
+      .env = ((.env // {}) + {GIT_CONFIG_GLOBAL: $cfg})
+      | .hooks = (.hooks // {})
+      | .hooks.SessionStart = (
+          ((.hooks.SessionStart // [])
+            | map(select((.hooks // []) | map(.command // "") | any(test("claude-ssh-agent")) | not)))
+          + [{hooks: [{type: "command", command: $cmd, timeout: 30,
+                       statusMessage: "Loading the git signing identity"}]}])
+    ' "$settings" 2>/dev/null) || merged=""
+  elif command -v python3 >/dev/null 2>&1; then
+    merged=$(CLAUDE_GITCONFIG="$HOME/.claude/gitconfig" CLAUDE_HOOK_CMD="$cmd" python3 - "$settings" <<'PYEOF' 2>/dev/null
+import json, os, sys
+p = sys.argv[1]
+try:
+    d = json.load(open(p))
+except Exception:
+    d = {}
+if not isinstance(d, dict):
+    raise SystemExit(1)
+cmd = os.environ["CLAUDE_HOOK_CMD"]
+d.setdefault("env", {})["GIT_CONFIG_GLOBAL"] = os.environ["CLAUDE_GITCONFIG"]
+hooks = d.setdefault("hooks", {})
+kept = [e for e in hooks.get("SessionStart", [])
+        if not any("claude-ssh-agent" in (h.get("command") or "") for h in e.get("hooks", []))]
+kept.append({"hooks": [{"type": "command", "command": cmd, "timeout": 30,
+                        "statusMessage": "Loading the git signing identity"}]})
+hooks["SessionStart"] = kept
+print(json.dumps(d, indent=2))
+PYEOF
+) || merged=""
+  else
+    rm -f "$tmp"
+    log "neither jq nor python3 found; skipping the settings merge (set env.GIT_CONFIG_GLOBAL by hand)"
+    return
+  fi
+
+  if [ -z "$merged" ]; then
+    rm -f "$tmp"
+    log "could not parse $settings; leaving it untouched"
+    return
+  fi
+  printf '%s\n' "$merged" > "$tmp"
+  if ! cmp -s "$tmp" "$settings"; then
+    backup_file "$settings"
+    mv "$tmp" "$settings"
+    chmod 600 "$settings"
+    log "merged the agent identity into $settings"
+  else
+    rm -f "$tmp"
+  fi
+}
+
 install_agent_rules() {
   local rules_target="$HOME/.agents/global-rules.md"
   local codex_agents="$HOME/.codex/AGENTS.md"
@@ -243,6 +312,7 @@ main() {
 
   install_agent_rules
   install_claude_git_identity
+  install_claude_settings
 
   touch "$HOME/.zshrc.local" "$HOME/.zshenv.local" "$HOME/.oh-my-jodok.zsh"
   patch_zshrc

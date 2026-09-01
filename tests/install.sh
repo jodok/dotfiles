@@ -141,4 +141,24 @@ grep -Fq 'jodok@batlogg.com ssh-ed25519 AAAATESTKEY' "$HOME/.config/git/allowed_
 "$ROOT_DIR/install.sh" >/dev/null
 test "$(grep -Fc 'AAAATESTKEY' "$HOME/.config/git/allowed_signers")" = 1
 
+# The identity has to be the default, not something to remember per command -- and
+# settings.json is the user's own file, so the merge must preserve what is there.
+printf '{"theme":"auto","env":{"EXISTING":"kept"},"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"echo theirs"}]}]}}\n' \
+  > "$HOME/.claude/settings.json"
+"$ROOT_DIR/install.sh" >/dev/null
+test "$(jq -r '.theme' "$HOME/.claude/settings.json")" = 'auto'
+test "$(jq -r '.env.EXISTING' "$HOME/.claude/settings.json")" = 'kept'
+test "$(jq -r '.env.GIT_CONFIG_GLOBAL' "$HOME/.claude/settings.json")" = "$HOME/.claude/gitconfig"
+test "$(jq -r '[.hooks.SessionStart[].hooks[].command] | map(select(test("echo theirs"))) | length' "$HOME/.claude/settings.json")" = 1
+test "$(jq -r '[.hooks.SessionStart[].hooks[].command] | map(select(test("claude-ssh-agent"))) | length' "$HOME/.claude/settings.json")" = 1
+
+# Re-running adds no second copy of our hook.
+"$ROOT_DIR/install.sh" >/dev/null
+test "$(jq -r '[.hooks.SessionStart[].hooks[].command] | map(select(test("claude-ssh-agent"))) | length' "$HOME/.claude/settings.json")" = 1
+
+# A settings file that is not valid JSON is left alone rather than overwritten.
+printf 'not json at all\n' > "$HOME/.claude/settings.json"
+"$ROOT_DIR/install.sh" >/dev/null
+test "$(cat "$HOME/.claude/settings.json")" = 'not json at all'
+
 printf 'install tests passed\n'

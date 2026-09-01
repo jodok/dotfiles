@@ -28,6 +28,12 @@ The installer is idempotent and will:
   already listed — **appended, never rewritten**, since that file is yours and
   usually carries your own signing keys. Skipped with a note when the 1Password
   CLI is missing or signed out; no private key is ever written to disk
+- merge two keys into `~/.claude/settings.json`, so the identity is the default
+  rather than something to remember on every command: `env.GIT_CONFIG_GLOBAL`,
+  and a `SessionStart` hook that loads the keys into the agent. **Merged, never
+  rewritten** — your theme, your other settings and your own SessionStart hooks
+  survive, and a re-run adds no second copy. A settings file that is not valid
+  JSON is left untouched rather than replaced
 - back up any differing existing file before replacing it, using `<file>.bak`
   and then numbered `<file>.bak.N` paths so an earlier backup is never replaced
 - patch `~/.zshrc` so it contains:
