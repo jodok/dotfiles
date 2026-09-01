@@ -16,6 +16,10 @@ UPDATE_URL="$RAW_BASE/update.sh"
 UPDATE_CHECK_URL="$RAW_BASE/zsh/update-check.zsh"
 AGENT_RULES_URL="$RAW_BASE/agents/global-rules.md"
 CLAUDE_MD_URL="$RAW_BASE/agents/claude.md"
+CLAUDE_GITCONFIG_URL="$RAW_BASE/claude/gitconfig"
+CLAUDE_SSH_CONFIG_URL="$RAW_BASE/claude/ssh_config"
+CLAUDE_SSH_AGENT_URL="$RAW_BASE/claude/bin/claude-ssh-agent"
+CLAUDE_SSH_SIGN_URL="$RAW_BASE/claude/bin/claude-ssh-sign"
 
 log() {
   printf '\n[%s] %s\n' "dotfiles" "$*"
@@ -166,6 +170,46 @@ backup_file() {
   log "backed up $target to $backup"
 }
 
+# The signing identity agents use. Key material is never committed: the public half
+# is read from 1Password at install time, and the private halves are only ever
+# streamed into an ssh-agent by claude-ssh-agent.
+install_claude_git_identity() {
+  install_managed_file "$CLAUDE_GITCONFIG_URL" "$HOME/.claude/gitconfig"
+  install_managed_file "$CLAUDE_SSH_CONFIG_URL" "$HOME/.claude/ssh_config"
+  install_managed_file "$CLAUDE_SSH_AGENT_URL" "$HOME/.claude/bin/claude-ssh-agent"
+  install_managed_file "$CLAUDE_SSH_SIGN_URL" "$HOME/.claude/bin/claude-ssh-sign"
+  chmod 700 "$HOME/.claude/bin/claude-ssh-agent" "$HOME/.claude/bin/claude-ssh-sign"
+  chmod 600 "$HOME/.claude/gitconfig" "$HOME/.claude/ssh_config"
+
+  if ! command -v op >/dev/null 2>&1 || ! op whoami >/dev/null 2>&1; then
+    log "1Password CLI unavailable or signed out; skipping the signing key (run install again once 'op signin' works)"
+    return
+  fi
+
+  local vault="${CLAUDE_OP_VAULT:-Private}"
+  local pub
+  pub="$(op read "op://$vault/claude-signing/public key" 2>/dev/null || true)"
+  if [ -z "$pub" ]; then
+    log "no claude-signing item in the $vault vault; skipping the signing key"
+    return
+  fi
+  printf '%s\n' "$pub" > "$HOME/.claude/claude-signing.pub"
+  chmod 644 "$HOME/.claude/claude-signing.pub"
+
+  # Appended, never rewritten: this file is the user's, and it usually lists their
+  # own signing keys too. Only the line that is missing is added.
+  local signers="$HOME/.config/git/allowed_signers"
+  local line
+  line="jodok@batlogg.com $(printf '%s' "$pub" | awk '{print $1" "$2}')"
+  mkdir -p "$(dirname "$signers")"
+  touch "$signers"
+  if ! grep -qF "$line" "$signers"; then
+    printf '%s\n' "$line" >> "$signers"
+    log "added claude-signing to $signers"
+  fi
+  log "installed the agent git identity"
+}
+
 install_agent_rules() {
   local rules_target="$HOME/.agents/global-rules.md"
   local codex_agents="$HOME/.codex/AGENTS.md"
@@ -198,6 +242,7 @@ main() {
   chmod +x "$CUSTOM_DIR/update.sh"
 
   install_agent_rules
+  install_claude_git_identity
 
   touch "$HOME/.zshrc.local" "$HOME/.zshenv.local" "$HOME/.oh-my-jodok.zsh"
   patch_zshrc

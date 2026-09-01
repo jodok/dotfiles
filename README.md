@@ -21,6 +21,13 @@ The installer is idempotent and will:
 - install `agents/global-rules.md` to `~/.agents/global-rules.md`
 - install `agents/claude.md` to `~/.claude/CLAUDE.md`
 - link `~/.codex/AGENTS.md` to `~/.agents/global-rules.md`
+- install `claude/gitconfig`, `claude/ssh_config` and `claude/bin/*` under
+  `~/.claude/`, the git identity coding agents commit and push with
+- write `~/.claude/claude-signing.pub` from the `claude-signing` item in
+  1Password, and add that key to `~/.config/git/allowed_signers` if it is not
+  already listed — **appended, never rewritten**, since that file is yours and
+  usually carries your own signing keys. Skipped with a note when the 1Password
+  CLI is missing or signed out; no private key is ever written to disk
 - back up any differing existing file before replacing it, using `<file>.bak`
   and then numbered `<file>.bak.N` paths so an earlier backup is never replaced
 - patch `~/.zshrc` so it contains:
@@ -66,6 +73,11 @@ zstyle ':omj:update' mode disabled
     jodok.zsh-theme
 ~/.agents/
   global-rules.md      # shared rules for all coding agents
+claude/
+  gitconfig            # the identity agents commit and push with
+  ssh_config           # github.com via the agent's own ssh-agent
+  bin/claude-ssh-agent # loads the keys from 1Password into a plain ssh-agent
+  bin/claude-ssh-sign  # pins SSH_AUTH_SOCK for ssh-keygen when git signs
 ~/.claude/CLAUDE.md    # imports ~/.agents/global-rules.md
 ~/.codex/AGENTS.md     # symlink to ~/.agents/global-rules.md
 ```

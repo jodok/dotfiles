@@ -1,0 +1,40 @@
+#!/bin/sh
+# Load the agent git identity into a long-lived ssh-agent, from 1Password, without
+# ever writing a private key to disk.
+#
+# Not the 1Password SSH agent: that one prompts for approval, and signing and SSH
+# auth both go through the desktop app, so they fail together and intermittently
+# ("failed to fill whole buffer"). This is plain OpenSSH, holds only these two keys,
+# and keeps them in its own memory. `op read` streams each key into `ssh-add -`.
+#
+# Idempotent: adopts a healthy agent and reloads only when a key is missing.
+set -eu
+
+SOCK="${CLAUDE_SSH_AUTH_SOCK:-$HOME/.claude/run/agent.sock}"
+VAULT="${CLAUDE_OP_VAULT:-Private}"
+# By title, not by item id: readable, and it survives an item being recreated.
+SIGNING="op://$VAULT/claude-signing/private key?ssh-format=openssh"
+AUTH="op://$VAULT/claude-auth/private key?ssh-format=openssh"
+
+if [ -S "$SOCK" ] && SSH_AUTH_SOCK="$SOCK" ssh-add -l >/dev/null 2>&1; then
+  if [ "$(SSH_AUTH_SOCK="$SOCK" ssh-add -l | wc -l | tr -d ' ')" -ge 2 ]; then
+    echo "claude-ssh-agent: already loaded at $SOCK"
+    exit 0
+  fi
+fi
+
+command -v op >/dev/null 2>&1 || { echo "claude-ssh-agent: the 1Password CLI (op) is required" >&2; exit 1; }
+op whoami >/dev/null 2>&1 || { echo "claude-ssh-agent: op is not signed in — run 'op signin' first" >&2; exit 1; }
+
+mkdir -p "$(dirname "$SOCK")"
+chmod 700 "$(dirname "$SOCK")"
+rm -f "$SOCK"
+ssh-agent -a "$SOCK" >/dev/null
+
+# `op read` emits no trailing newline and ssh-add needs one; the default field is
+# PKCS#8, which ssh-add rejects, hence ssh-format=openssh above.
+for item in "$SIGNING" "$AUTH"; do
+  printf '%s\n' "$(op read "$item")" | SSH_AUTH_SOCK="$SOCK" ssh-add - >/dev/null 2>&1 ||
+    { echo "claude-ssh-agent: could not load $item" >&2; exit 1; }
+done
+echo "claude-ssh-agent: loaded $(SSH_AUTH_SOCK="$SOCK" ssh-add -l | wc -l | tr -d ' ') keys into $SOCK"

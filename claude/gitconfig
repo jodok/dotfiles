@@ -1,0 +1,33 @@
+# The git identity agents commit and push with. Used by pointing GIT_CONFIG_GLOBAL
+# at this file; it includes the real global config first, so aliases and everything
+# else still apply and only the identity differs.
+#
+#   GIT_CONFIG_GLOBAL=~/.claude/gitconfig git commit -m "…"
+#
+# Signing goes through ssh-keygen and the agent at ~/.claude/run/agent.sock (see
+# claude-ssh-agent), never through op-ssh-sign: the 1Password desktop app is the
+# part that prompts and fails intermittently.
+[include]
+	path = ~/.gitconfig
+
+[user]
+	name = Jodok Batlogg
+	email = jodok@batlogg.com
+	# Written by install.sh from the 1Password item, so no key material lives in
+	# this repository — which is public.
+	signingkey = ~/.claude/claude-signing.pub
+
+[gpg]
+	format = ssh
+[gpg "ssh"]
+	program = ~/.claude/bin/claude-ssh-sign
+	allowedSignersFile = ~/.config/git/allowed_signers
+
+[commit]
+	gpgsign = true
+
+[core]
+	# Pushes authenticate with claude-auth from the same agent. The separate ssh
+	# config exists because ~/.ssh/config may pin github.com to the 1Password agent
+	# with `IdentitiesOnly yes`, which would never offer this key.
+	sshCommand = ssh -F ~/.claude/ssh_config

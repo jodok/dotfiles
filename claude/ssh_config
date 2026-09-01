@@ -1,0 +1,14 @@
+# SSH config for the agent identity's git remotes, reached via core.sshCommand in
+# ~/.claude/gitconfig. Nothing else uses it.
+#
+# A personal ~/.ssh/config commonly pins github.com to the 1Password agent with
+# `IdentitiesOnly yes` and a specific IdentityFile, so an agent-held key it does not
+# list is never offered. ssh takes the FIRST value it sees for each keyword, so this
+# block wins for github.com and the Include below supplies every other host unchanged.
+Host github.com
+	HostName github.com
+	User git
+	IdentityAgent ~/.claude/run/agent.sock
+	IdentitiesOnly no
+
+Include ~/.ssh/config
