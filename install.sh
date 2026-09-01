@@ -226,7 +226,7 @@ install_claude_git_identity() {
 #
 # settings.json is the user's file — theme, notifications, their own hooks — so this
 # merges into it and never rewrites it. Idempotent: re-running replaces only our own
-# SessionStart entry.
+# SessionStart hook, and only the surrounding entry if that hook was all it held.
 install_claude_settings() {
   local settings="$HOME/.claude/settings.json"
   # Only switch git over once the identity actually exists. The config it selects sets
@@ -258,7 +258,11 @@ install_claude_settings() {
       | .hooks = (.hooks // {})
       | .hooks.SessionStart = (
           ((.hooks.SessionStart // [])
-            | map(select((.hooks // []) | map(.command // "") | any(test("claude-ssh-agent")) | not)))
+            | map(
+                if ((.hooks // []) | map(.command // "") | any(test("claude-ssh-agent")))
+                then ((.hooks |= map(select((.command // "") | test("claude-ssh-agent") | not)))
+                      | if (.hooks | length) == 0 then empty else . end)
+                else . end))
           + [{hooks: [{type: "command", command: $cmd, timeout: 30,
                        statusMessage: "Loading the git signing identity"}]}])
     ' "$settings" 2>/dev/null) || merged=""
@@ -277,8 +281,18 @@ if not isinstance(d, dict):
 cmd = os.environ["CLAUDE_HOOK_CMD"]
 d.setdefault("env", {})["GIT_CONFIG_GLOBAL"] = os.environ["CLAUDE_GITCONFIG"]
 hooks = d.setdefault("hooks", {})
-kept = [e for e in hooks.get("SessionStart", [])
-        if not any("claude-ssh-agent" in (h.get("command") or "") for h in e.get("hooks", []))]
+# Drop only OUR hook object, not the entry around it: a SessionStart entry may hold
+# several hooks plus a matcher, and someone who folded ours in by hand would lose all
+# of it on the next install. The entry itself goes only if we emptied it.
+kept = []
+for e in hooks.get("SessionStart", []):
+    hs = e.get("hooks", [])
+    if any("claude-ssh-agent" in (h.get("command") or "") for h in hs):
+        e = dict(e)
+        e["hooks"] = [h for h in hs if "claude-ssh-agent" not in (h.get("command") or "")]
+        if not e["hooks"]:
+            continue
+    kept.append(e)
 kept.append({"hooks": [{"type": "command", "command": cmd, "timeout": 30,
                         "statusMessage": "Loading the git signing identity"}]})
 hooks["SessionStart"] = kept

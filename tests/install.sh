@@ -251,4 +251,44 @@ test "$gh_ids" = 1
 ssh -F "$HOME/.claude/ssh_config" -G github.com </dev/null 2>/dev/null | grep -Fq 'identityfile ~/.claude/claude-auth.pub'
 test "$(ssh -F "$HOME/.claude/ssh_config" -G somehost </dev/null 2>/dev/null | awk '$1=="user"{print $2}')" = 'personaluser'
 
+# Both keys again -- the block above deliberately left the identity incomplete, and
+# with it incomplete the settings merge does not run at all, which would make every
+# assertion below pass without exercising anything.
+cat > "$TEST_DIR/bin/op" <<'EOF'
+#!/usr/bin/env bash
+case "$1" in
+  whoami) exit 0 ;;
+  read)
+    case "$2" in
+      *claude-auth*) printf 'ssh-ed25519 AAAAAUTHKEY comment' ;;
+      *) printf 'ssh-ed25519 AAAATESTKEY comment' ;;
+    esac
+    ;;
+  *) exit 1 ;;
+esac
+EOF
+chmod +x "$TEST_DIR/bin/op"
+"$ROOT_DIR/install.sh" >/dev/null
+test -f "$HOME/.claude/claude-auth.pub"
+
+# Our hook may end up folded into an entry the user also uses for their own commands.
+# Re-running must remove only our hook object, not the entry: dropping the whole entry
+# would silently delete their sibling commands and the matcher along with it. Both
+# merge paths have to agree, so each is exercised.
+for tool in jq python3; do
+  printf '{"hooks":{"SessionStart":[{"matcher":"startup","hooks":[{"type":"command","command":"echo sibling"},{"type":"command","command":"~/.claude/bin/claude-ssh-agent"}]},{"hooks":[{"type":"command","command":"echo lonely"}]}]}}\n' \
+    > "$HOME/.claude/settings.json"
+  CLAUDE_JSON_TOOL="$tool" "$ROOT_DIR/install.sh" >/dev/null
+  test "$(jq -r '[.hooks.SessionStart[].hooks[].command] | map(select(test("echo sibling"))) | length' "$HOME/.claude/settings.json")" = 1
+  test "$(jq -r '[.hooks.SessionStart[].hooks[].command] | map(select(test("echo lonely"))) | length' "$HOME/.claude/settings.json")" = 1
+  test "$(jq -r '[.hooks.SessionStart[] | select(.matcher == "startup")] | length' "$HOME/.claude/settings.json")" = 1
+  test "$(jq -r '[.hooks.SessionStart[].hooks[].command] | map(select(test("claude-ssh-agent"))) | length' "$HOME/.claude/settings.json")" = 1
+done
+
+# An entry that held nothing but our hook is removed rather than left behind empty.
+printf '{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"~/.claude/bin/claude-ssh-agent"}]}]}}\n' \
+  > "$HOME/.claude/settings.json"
+"$ROOT_DIR/install.sh" >/dev/null
+test "$(jq -r '.hooks.SessionStart | length' "$HOME/.claude/settings.json")" = 1
+
 printf 'install tests passed\n'
