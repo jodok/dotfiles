@@ -77,12 +77,14 @@ repository's `AGENTS.md`.
 ## Picking the right models for workflows and subagents
 
 Rankings, higher = better. Cost is an availability score, not API list
-price. There is one high-capacity subscription with each provider, so treat
-OpenAI and Anthropic plan headroom as broadly balanced. Codex-Spark has an
-additional, separate quota lane. Cost differences within a provider reflect
-how quickly each model burns its plan quota. Intelligence is how hard a
-problem you can hand the model unsupervised. Taste covers UI/UX, code quality,
-API design, and copy.
+price. There is one high-capacity subscription with each provider, but as of
+2026-09-01 OpenAI plan headroom (Codex, including GPT Sol) is plentiful — when
+a task fits both providers' rows equally, delegate it to Codex and keep
+Anthropic quota for supervision, review, and taste-critical surfaces.
+Codex-Spark has an additional, separate quota lane. Cost differences within a
+provider reflect how quickly each model burns its plan quota. Intelligence is
+how hard a problem you can hand the model unsupervised. Taste covers UI/UX,
+code quality, API design, and copy.
 
 | model                 | cost | intelligence | taste |
 |-----------------------|------|--------------|-------|
@@ -92,6 +94,10 @@ API design, and copy.
 | sonnet-5              | 9    | 5            | 7     |
 | opus-4.8              | 7    | 8            | 8     |
 | fable-5               | 5    | 9            | 9     |
+
+GPT Sol is newly available on the Codex quota lane and not yet scored here —
+until it earns its own row, treat it like gpt-5.5 and score it after a few
+real tasks.
 
 How to apply:
 
@@ -111,8 +117,8 @@ How to apply:
   preview capacity; workflows must not depend on its continued availability.
 - Bulk/mechanical work (clear-spec implementation, data analysis,
   migrations): prefer gpt-5.5 when its higher intelligence helps; use
-  sonnet-5 when the output needs its stronger taste. Provider headroom is no
-  longer the deciding factor between them.
+  sonnet-5 when the output needs its stronger taste. When the two tie,
+  current Codex headroom breaks the tie toward gpt-5.5.
 - Unsupervised medium-hard chunks: opus-4.8 is a solid default when its
   intelligence and taste justify its higher quota burn (intelligence 8 at
   cost 7).
