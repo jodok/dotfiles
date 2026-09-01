@@ -7,8 +7,11 @@
 For the model rankings and when to use which model, see the global rules
 above. Mechanics inside Claude Code:
 
-- gpt-5.5 runs via the openai/codex-plugin-cc plugin (it picks up
-  `~/.codex/config.toml`). Delegate to it through the plugin's slash
-  commands and skills, never through hand-rolled bash wrappers.
+- Codex-hosted OpenAI models (gpt-5.5, and newly GPT Sol) run via the
+  openai/codex-plugin-cc plugin (it picks up `~/.codex/config.toml`).
+  Delegate to them through the plugin's slash commands and skills, never
+  through hand-rolled bash wrappers. In sessions where the plugin is not
+  loaded (e.g. the desktop app), fall back to Claude subagents rather than
+  wrapping the `codex` CLI by hand.
 - Claude models (sonnet-5, opus-4.8, fable-5) run via the Agent tool's
   `model` parameter.
