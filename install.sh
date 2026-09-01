@@ -195,6 +195,15 @@ install_claude_git_identity() {
   fi
   printf '%s\n' "$pub" > "$HOME/.claude/claude-signing.pub"
   chmod 644 "$HOME/.claude/claude-signing.pub"
+  # The auth key's public half too: claude-ssh-agent compares what the agent holds
+  # against these files, so a rotated key is noticed without calling 1Password on
+  # every session start.
+  local authpub
+  authpub="$(op read "op://$vault/claude-auth/public key" 2>/dev/null || true)"
+  if [ -n "$authpub" ]; then
+    printf '%s\n' "$authpub" > "$HOME/.claude/claude-auth.pub"
+    chmod 644 "$HOME/.claude/claude-auth.pub"
+  fi
 
   # Appended, never rewritten: this file is the user's, and it usually lists their
   # own signing keys too. Only the line that is missing is added.
@@ -220,13 +229,24 @@ install_claude_git_identity() {
 # SessionStart entry.
 install_claude_settings() {
   local settings="$HOME/.claude/settings.json"
+  # Only switch git over once the identity actually exists. The config it selects sets
+  # commit.gpgsign and a signing key; without the key every commit fails, which would
+  # turn "1Password was locked, so we skipped a step" into "git no longer works".
+  if [ ! -f "$HOME/.claude/claude-signing.pub" ]; then
+    log "no signing key installed yet; leaving settings.json alone (run install again once 'op signin' works)"
+    return
+  fi
   local cmd="~/.claude/bin/claude-ssh-agent 2>/dev/null || true"
   local tmp merged
   mkdir -p "$HOME/.claude"
   [ -f "$settings" ] || printf '{}\n' > "$settings"
   tmp="$(mktemp)"
 
-  if command -v jq >/dev/null 2>&1; then
+  # Which JSON tool does the merge. "auto" prefers jq and falls back to python3;
+  # naming one explicitly is how the tests reach the fallback on a machine that has
+  # both, and how a user can pin the behaviour if their jq is unusual.
+  local tool="${CLAUDE_JSON_TOOL:-auto}"
+  if { [ "$tool" = "auto" ] || [ "$tool" = "jq" ]; } && command -v jq >/dev/null 2>&1; then
     merged=$(jq --arg cfg "$HOME/.claude/gitconfig" --arg cmd "$cmd" '
       .env = ((.env // {}) + {GIT_CONFIG_GLOBAL: $cfg})
       | .hooks = (.hooks // {})
@@ -236,14 +256,16 @@ install_claude_settings() {
           + [{hooks: [{type: "command", command: $cmd, timeout: 30,
                        statusMessage: "Loading the git signing identity"}]}])
     ' "$settings" 2>/dev/null) || merged=""
-  elif command -v python3 >/dev/null 2>&1; then
+  elif { [ "$tool" = "auto" ] || [ "$tool" = "python3" ]; } && command -v python3 >/dev/null 2>&1; then
     merged=$(CLAUDE_GITCONFIG="$HOME/.claude/gitconfig" CLAUDE_HOOK_CMD="$cmd" python3 - "$settings" <<'PYEOF' 2>/dev/null
 import json, os, sys
 p = sys.argv[1]
+# A parse failure must fail the merge, not start from {} -- replacing a settings
+# file we cannot read is exactly the destructive rewrite this installer forbids.
 try:
     d = json.load(open(p))
 except Exception:
-    d = {}
+    raise SystemExit(1)
 if not isinstance(d, dict):
     raise SystemExit(1)
 cmd = os.environ["CLAUDE_HOOK_CMD"]

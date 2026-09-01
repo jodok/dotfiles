@@ -127,7 +127,12 @@ cat > "$TEST_DIR/bin/op" <<'EOF'
 #!/usr/bin/env bash
 case "$1" in
   whoami) exit 0 ;;
-  read) printf 'ssh-ed25519 AAAATESTKEY comment' ;;
+  read)
+    case "$2" in
+      *claude-auth*) printf 'ssh-ed25519 AAAAAUTHKEY comment' ;;
+      *) printf 'ssh-ed25519 AAAATESTKEY comment' ;;
+    esac
+    ;;
   *) exit 1 ;;
 esac
 EOF
@@ -160,5 +165,50 @@ test "$(jq -r '[.hooks.SessionStart[].hooks[].command] | map(select(test("claude
 printf 'not json at all\n' > "$HOME/.claude/settings.json"
 "$ROOT_DIR/install.sh" >/dev/null
 test "$(cat "$HOME/.claude/settings.json")" = 'not json at all'
+
+# Activating the git config while no signing key exists would leave a git that cannot
+# commit at all -- the config it selects sets commit.gpgsign. A skipped 1Password step
+# must stay a skipped step, not a broken workflow.
+rm -f "$HOME/.claude/claude-signing.pub" "$HOME/.claude/settings.json"
+cat > "$TEST_DIR/bin/op" <<'EOF'
+#!/usr/bin/env bash
+exit 1
+EOF
+chmod +x "$TEST_DIR/bin/op"
+"$ROOT_DIR/install.sh" >/dev/null
+test ! -e "$HOME/.claude/claude-signing.pub"
+test ! -e "$HOME/.claude/settings.json"
+
+# With the key present, the settings are merged as before.
+cat > "$TEST_DIR/bin/op" <<'EOF'
+#!/usr/bin/env bash
+case "$1" in
+  whoami) exit 0 ;;
+  read)
+    case "$2" in
+      *claude-auth*) printf 'ssh-ed25519 AAAAAUTHKEY comment' ;;
+      *) printf 'ssh-ed25519 AAAATESTKEY comment' ;;
+    esac
+    ;;
+  *) exit 1 ;;
+esac
+EOF
+chmod +x "$TEST_DIR/bin/op"
+"$ROOT_DIR/install.sh" >/dev/null
+test "$(jq -r '.env.GIT_CONFIG_GLOBAL' "$HOME/.claude/settings.json")" = "$HOME/.claude/gitconfig"
+grep -Fq 'AAAAAUTHKEY' "$HOME/.claude/claude-auth.pub"
+
+# The python fallback must refuse a settings file it cannot parse, exactly as the jq
+# path does. Only the jq path was covered before, which is how a reset slipped through.
+printf 'not json at all\n' > "$HOME/.claude/settings.json"
+CLAUDE_JSON_TOOL=python3 "$ROOT_DIR/install.sh" >/dev/null
+test "$(cat "$HOME/.claude/settings.json")" = 'not json at all'
+
+# And through python it must still merge correctly, preserving what was there.
+printf '{"theme":"auto","env":{"EXISTING":"kept"}}\n' > "$HOME/.claude/settings.json"
+CLAUDE_JSON_TOOL=python3 "$ROOT_DIR/install.sh" >/dev/null
+test "$(jq -r '.env.EXISTING' "$HOME/.claude/settings.json")" = 'kept'
+test "$(jq -r '.theme' "$HOME/.claude/settings.json")" = 'auto'
+grep -Fq 'claude-ssh-agent' "$HOME/.claude/settings.json"
 
 printf 'install tests passed\n'
