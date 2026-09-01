@@ -4,6 +4,11 @@
 #
 #   GIT_CONFIG_GLOBAL=~/.claude/gitconfig git commit -m "…"
 #
+# MANAGED FILE -- install.sh overwrites it. While GIT_CONFIG_GLOBAL points here,
+# `git config --global …` writes into THIS file rather than ~/.gitconfig, so anything
+# set that way is lost on the next install (kept as a .bak). Put durable settings in
+# ~/.gitconfig, which the include below pulls in.
+#
 # Signing goes through ssh-keygen and the agent at ~/.claude/run/agent.sock (see
 # claude-ssh-agent), never through op-ssh-sign: the 1Password desktop app is the
 # part that prompts and fails intermittently.

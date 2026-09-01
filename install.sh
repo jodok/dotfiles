@@ -236,7 +236,10 @@ install_claude_settings() {
     log "no signing key installed yet; leaving settings.json alone (run install again once 'op signin' works)"
     return
   fi
-  local cmd="~/.claude/bin/claude-ssh-agent 2>/dev/null || true"
+  # Not silenced. If the vault is locked, every commit in the session fails with
+  # "No private key found for public key" -- which names the key, not the cause.
+  # One legible line at session start beats a clean start and a baffling failure.
+  local cmd="~/.claude/bin/claude-ssh-agent || echo \"claude-ssh-agent: commits will fail until op is signed in and this is re-run\""
   local tmp merged
   mkdir -p "$HOME/.claude"
   [ -f "$settings" ] || printf '{}\n' > "$settings"
@@ -280,8 +283,10 @@ print(json.dumps(d, indent=2))
 PYEOF
 ) || merged=""
   else
+    # Unreachable in practice: main() requires python3 for upsert_line, so an install
+    # without it stops earlier. A guard, not a promise.
     rm -f "$tmp"
-    log "neither jq nor python3 found; skipping the settings merge (set env.GIT_CONFIG_GLOBAL by hand)"
+    log "no JSON tool available; skipping the settings merge"
     return
   fi
 
