@@ -1,15 +1,14 @@
 # SSH config for the agent identity's git remotes, reached via core.sshCommand in
 # ~/.claude/gitconfig. Nothing else uses it.
 #
-# A personal ~/.ssh/config commonly pins github.com to the 1Password agent with
-# `IdentitiesOnly yes` and a specific IdentityFile, so an agent-held key it does not
-# list is never offered. ssh takes the FIRST value it sees for each keyword, so this
-# block wins for github.com and the Include below supplies every other host unchanged.
-# `IdentityFile` is additive, so the Include below can append the personal GitHub
-# identity to this block -- and with `IdentitiesOnly no` any on-disk default key is
-# eligible too. Either could authenticate before claude-auth, pushing as the human
-# account and defeating an identity that is supposed to be separately revocable.
-# Naming the auth key and setting `IdentitiesOnly yes` makes it the only one offered.
+# github.com is served entirely from the block below and is deliberately excluded
+# from the Include. `IdentityFile` is additive and `IdentitiesOnly yes` does not help
+# -- a file appended by an included `Host github.com` block counts as configured, so
+# a personal key would be offered too, and would push as the human account the moment
+# claude-auth stopped answering first. An identity that is supposed to be separately
+# revocable cannot have a silent fallback to the identity it is separate from. The
+# cost is that a github-specific workaround in ~/.ssh/config (the ssh.github.com:443
+# port escape, say) does not apply here; add it to this block if you ever need it.
 Host github.com
 	HostName github.com
 	User git
@@ -17,4 +16,9 @@ Host github.com
 	IdentityFile ~/.claude/claude-auth.pub
 	IdentitiesOnly yes
 
+# Every other host comes from the personal config unchanged. `Match !host` rather than
+# a bare Include: an Include at the end of a `Host` block is CONDITIONAL on that block,
+# so writing it there would leave every non-github remote with no ~/.ssh/config at all
+# -- no ProxyJump, no User, no IdentityFile.
+Match !host github.com
 Include ~/.ssh/config

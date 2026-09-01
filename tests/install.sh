@@ -234,4 +234,21 @@ test -f "$HOME/.claude/claude-signing.pub"
 test ! -e "$HOME/.claude/claude-auth.pub"
 test ! -e "$HOME/.claude/settings.json"
 
+# The github.com block must be self-contained and the personal config must still
+# reach every other host. Both are easy to get wrong in the same file: an Include at
+# the end of a `Host` block is conditional on it, and an included `Host github.com`
+# block would append a personal IdentityFile that `IdentitiesOnly yes` does not
+# exclude -- a silent fallback to the very identity this one is separate from.
+mkdir -p "$HOME/.ssh"
+cat > "$HOME/.ssh/config" <<'EOF'
+Host github.com
+	IdentityFile ~/.ssh/personal_github.pub
+Host somehost
+	User personaluser
+EOF
+gh_ids="$(ssh -F "$HOME/.claude/ssh_config" -G github.com </dev/null 2>/dev/null | grep -c '^identityfile ')"
+test "$gh_ids" = 1
+ssh -F "$HOME/.claude/ssh_config" -G github.com </dev/null 2>/dev/null | grep -Fq 'identityfile ~/.claude/claude-auth.pub'
+test "$(ssh -F "$HOME/.claude/ssh_config" -G somehost </dev/null 2>/dev/null | awk '$1=="user"{print $2}')" = 'personaluser'
+
 printf 'install tests passed\n'
