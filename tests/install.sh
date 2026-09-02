@@ -530,7 +530,13 @@ fi
 if grep -v '^[[:space:]]*#' "$HOME/.claude/bin/claude-ssh-agent" | grep -Fq 'CLAUDE_OP_VAULT'; then
   echo "loader still reads the vault from its environment" >&2; exit 1
 fi
+# A plain run must not re-point a non-default vault at Private: the loader is rewritten
+# before the op guard, so it would be rebaked while the other vault's public keys stay
+# in place -- working until the agent socket goes away, then failing everything.
 "$ROOT_DIR/install.sh" >/dev/null
+grep -Fq 'VAULT="Work"' "$HOME/.claude/bin/claude-ssh-agent"
+# An explicit choice still wins.
+CLAUDE_OP_VAULT=Private "$ROOT_DIR/install.sh" >/dev/null
 grep -Fq 'VAULT="Private"' "$HOME/.claude/bin/claude-ssh-agent"
 
 printf 'install tests passed\n'

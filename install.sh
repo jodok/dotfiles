@@ -195,6 +195,20 @@ backup_file() {
 # is read from 1Password at install time, and the private halves are only ever
 # streamed into an ssh-agent by claude-ssh-agent.
 install_claude_git_identity() {
+  # An ordinary run must not silently re-point a non-default vault at Private. The
+  # loader is rewritten before the op guard below, so a run without CLAUDE_OP_VAULT
+  # would rebake it while the public keys from the other vault stay in place -- working
+  # until the agent socket goes away, then failing every commit and push. Absent an
+  # explicit choice, whatever is already installed is the choice.
+  if [ -z "${CLAUDE_OP_VAULT:-}" ] && [ -f "$HOME/.claude/bin/claude-ssh-agent" ]; then
+    local baked
+    baked="$(sed -n 's/^VAULT="\(.*\)"$/\1/p' "$HOME/.claude/bin/claude-ssh-agent" | head -1)"
+    case "$baked" in
+      ""|*@*) ;;
+      *) CLAUDE_OP_VAULT="$baked" ;;
+    esac
+  fi
+
   install_managed_file "$CLAUDE_GITCONFIG_URL" "$HOME/.claude/gitconfig" expand
   install_managed_file "$CLAUDE_SSH_CONFIG_URL" "$HOME/.claude/ssh_config" expand
   install_managed_file "$CLAUDE_SSH_AGENT_URL" "$HOME/.claude/bin/claude-ssh-agent" expand
