@@ -6,6 +6,6 @@
 # in agent?" while pushes still work, which reads like a signing-key problem rather
 # than an agent-selection one. Pinning the socket here means GIT_CONFIG_GLOBAL alone
 # is enough, with no second variable to remember.
-SSH_AUTH_SOCK="${CLAUDE_SSH_AUTH_SOCK:-$HOME/.claude/run/agent.sock}"
+SSH_AUTH_SOCK="$HOME/.claude/run/agent.sock"
 export SSH_AUTH_SOCK
 exec ssh-keygen "$@"

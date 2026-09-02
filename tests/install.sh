@@ -346,34 +346,23 @@ test "$(GIT_CONFIG_GLOBAL="$HOME/.claude/gitconfig" git -C "$HOME/repo" config -
 test "$(GIT_CONFIG_GLOBAL="$HOME/.claude/gitconfig" git -C "$HOME/repo" config --get alias.yyy)" = 'log'
 "$ROOT_DIR/install.sh" >/dev/null
 
-# The loader runs from a SessionStart hook, and a repository's .claude/settings.json
-# outranks the user's, so CLAUDE_SSH_AUTH_SOCK is attacker-controllable. An
-# unvalidated path gets its parent chmodded and is then unlinked, which is a way to
-# delete any file the user can write.
-victim="$HOME/victim.conf"
-printf 'precious\n' > "$victim"
-if CLAUDE_SSH_AUTH_SOCK="$victim" "$HOME/.claude/bin/claude-ssh-agent" >/dev/null 2>&1; then
-  echo "loader accepted a socket path outside ~/.claude" >&2; exit 1
-fi
-grep -Fq 'precious' "$victim"
+# The socket path is fixed rather than configurable -- an override would be settable
+# by any repository through .claude/settings.json, and ssh_config could not honour it
+# anyway -- but a leftover regular file at that path must not be chmodded and unlinked
+# on the way to creating the socket.
 mkdir -p "$HOME/.claude/run"
-printf 'precious\n' > "$HOME/.claude/run/notasocket"
-if CLAUDE_SSH_AUTH_SOCK="$HOME/.claude/run/notasocket" "$HOME/.claude/bin/claude-ssh-agent" >/dev/null 2>&1; then
-  echo "loader replaced an existing non-socket" >&2; exit 1
+printf 'precious\n' > "$HOME/.claude/run/agent.sock"
+if "$HOME/.claude/bin/claude-ssh-agent" >/dev/null 2>&1; then
+  echo "loader replaced a non-socket at its own path" >&2; exit 1
 fi
-grep -Fq 'precious' "$HOME/.claude/run/notasocket"
-# A path that does not exist yet is the case the confinement alone answers: the
-# non-socket check cannot see it, and the loader would otherwise mkdir -p and chmod
-# 700 whatever directory it names.
-if CLAUDE_SSH_AUTH_SOCK="$HOME/elsewhere/nested/agent.sock" "$HOME/.claude/bin/claude-ssh-agent" >/dev/null 2>&1; then
-  echo "loader accepted a socket path outside ~/.claude" >&2; exit 1
-fi
-test ! -d "$HOME/elsewhere/nested"
-if CLAUDE_SSH_AUTH_SOCK="$HOME/.claude/../traversed/agent.sock" "$HOME/.claude/bin/claude-ssh-agent" >/dev/null 2>&1; then
-  echo "loader accepted a traversal path" >&2; exit 1
-fi
-test ! -d "$HOME/traversed"
-grep -Fq 'precious' "$victim"
+grep -Fq 'precious' "$HOME/.claude/run/agent.sock"
+rm -f "$HOME/.claude/run/agent.sock"
+# All three scripts must name the same socket, or a session signs against one agent
+# while every push looks for another.
+test "$(grep -c 'CLAUDE_SSH_AUTH_SOCK' "$HOME/.claude/bin/claude-ssh-agent" "$HOME/.claude/bin/claude-ssh-sign" | awk -F: '{n+=$2} END{print n}')" = 0
+grep -Fq '.claude/run/agent.sock' "$HOME/.claude/ssh_config"
+grep -Fq '.claude/run/agent.sock' "$HOME/.claude/bin/claude-ssh-agent"
+grep -Fq '.claude/run/agent.sock' "$HOME/.claude/bin/claude-ssh-sign"
 
 # A half-successful provisioning run must not leave a mixed generation on disk: the
 # activation guard only tests that both files exist, so a new signing key beside the

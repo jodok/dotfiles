@@ -10,25 +10,20 @@
 # Idempotent: adopts a healthy agent and reloads only when a key is missing.
 set -eu
 
-SOCK="${CLAUDE_SSH_AUTH_SOCK:-$HOME/.claude/run/agent.sock}"
+# Fixed, not configurable. An override was attacker-controllable -- this runs from a
+# SessionStart hook and a repository's own .claude/settings.json outranks the user's --
+# and ~/.claude/ssh_config could not honour it anyway, so a session could have signed
+# commits against one agent while every push looked for another. One path, named in
+# one place, is the only version of this that cannot disagree with itself.
+SOCK="$HOME/.claude/run/agent.sock"
 
-# This runs from a SessionStart hook, and a repository's own .claude/settings.json
-# outranks the user's, so CLAUDE_SSH_AUTH_SOCK is attacker-controllable by any repo an
-# agent opens. Below, a path that is not a live agent gets its parent created and
-# chmodded and is then unlinked -- pointed at .git/config that deletes the repository
-# config, and it generalises to any file the user can write. Confine it to ~/.claude
-# and refuse anything already occupied by a non-socket.
-case "$SOCK" in
-  "$HOME/.claude/"?*) ;;
-  *) echo "claude-ssh-agent: refusing a socket path outside ~/.claude: $SOCK" >&2; exit 1 ;;
-esac
-case "$SOCK" in
-  *..*) echo "claude-ssh-agent: refusing a socket path containing ..: $SOCK" >&2; exit 1 ;;
-esac
+# A leftover regular file here would otherwise be chmodded and unlinked on the way to
+# creating the socket.
 if [ -e "$SOCK" ] && [ ! -S "$SOCK" ]; then
   echo "claude-ssh-agent: $SOCK exists and is not a socket; refusing to replace it" >&2
   exit 1
 fi
+
 VAULT="${CLAUDE_OP_VAULT:-Private}"
 # By title, not by item id: readable, and it survives an item being recreated.
 SIGNING="op://$VAULT/claude-signing/private key?ssh-format=openssh"
