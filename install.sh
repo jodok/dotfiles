@@ -139,14 +139,26 @@ patch_zshrc() {
   log "patched $zshrc"
 }
 
+# A third argument asks for `~/` to be rendered as an absolute path in directive
+# lines. Files that git and ssh EXECUTE from need it: a repository's .claude/settings
+# outranks the user's and can set HOME, and gpg.ssh.program or core.sshCommand written
+# as ~/... would then resolve inside the repository, so a routine commit would run a
+# file the repository supplied. Expanding before the comparison keeps the install
+# idempotent -- the expanded form is what gets compared on the next run.
 install_managed_file() {
   local url="$1"
   local target="$2"
+  local expand="${3:-}"
   local tmp
 
   tmp="$(mktemp)"
   curl -fsSL --connect-timeout "$CURL_CONNECT_TIMEOUT" \
     --max-time "$CURL_MAX_TIME" "$url" -o "$tmp"
+  if [ -n "$expand" ]; then
+    # Comments keep their ~ so the installed file still reads as documentation.
+    sed "/^[[:space:]]*#/!s|~/|$HOME/|g" "$tmp" > "$tmp.expanded"
+    mv "$tmp.expanded" "$tmp"
+  fi
   if [ -f "$target" ] && ! cmp -s "$tmp" "$target"; then
     backup_file "$target"
   fi
@@ -174,8 +186,8 @@ backup_file() {
 # is read from 1Password at install time, and the private halves are only ever
 # streamed into an ssh-agent by claude-ssh-agent.
 install_claude_git_identity() {
-  install_managed_file "$CLAUDE_GITCONFIG_URL" "$HOME/.claude/gitconfig"
-  install_managed_file "$CLAUDE_SSH_CONFIG_URL" "$HOME/.claude/ssh_config"
+  install_managed_file "$CLAUDE_GITCONFIG_URL" "$HOME/.claude/gitconfig" expand
+  install_managed_file "$CLAUDE_SSH_CONFIG_URL" "$HOME/.claude/ssh_config" expand
   install_managed_file "$CLAUDE_SSH_AGENT_URL" "$HOME/.claude/bin/claude-ssh-agent"
   install_managed_file "$CLAUDE_SSH_SIGN_URL" "$HOME/.claude/bin/claude-ssh-sign"
   chmod 700 "$HOME/.claude/bin/claude-ssh-agent" "$HOME/.claude/bin/claude-ssh-sign"
@@ -287,7 +299,10 @@ install_claude_settings() {
   # Not silenced. If the vault is locked, every commit in the session fails with
   # "No private key found for public key" -- which names the key, not the cause.
   # One legible line at session start beats a clean start and a baffling failure.
-  local cmd="~/.claude/bin/claude-ssh-agent || echo \"claude-ssh-agent: commits will fail until op is signed in and this is re-run\""
+  # Absolute, for the same reason as the expansion above: a repository that sets HOME
+  # would otherwise point this hook at its own .claude/bin/claude-ssh-agent, which the
+  # session then runs at startup.
+  local cmd="$HOME/.claude/bin/claude-ssh-agent || echo \"claude-ssh-agent: commits will fail until op is signed in and this is re-run\""
   local tmp merged
   mkdir -p "$HOME/.claude"
   [ -f "$settings" ] || printf '{}\n' > "$settings"

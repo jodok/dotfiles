@@ -254,7 +254,7 @@ for h in github.com gh-work somehost; do
   ids="$(ssh -F "$HOME/.claude/ssh_config" -G "$h" </dev/null 2>/dev/null)"
   # Exactly one identity, ours, from our agent -- no personal key, no personal agent.
   test "$(printf '%s\n' "$ids" | grep -c '^identityfile ')" = 1
-  printf '%s\n' "$ids" | grep -Fq 'identityfile ~/.claude/claude-auth.pub'
+  printf '%s\n' "$ids" | grep -Fq "identityfile $HOME/.claude/claude-auth.pub"
   test "$(printf '%s\n' "$ids" | awk '$1=="identityagent"{print $2}')" = "$agent_sock"
   test "$(printf '%s\n' "$ids" | awk '$1=="identitiesonly"{print $2}')" = 'yes'
   # And nothing is inherited from the personal config at all.
@@ -418,5 +418,31 @@ grep -Fq 'AAAAGENTWO' "$HOME/.config/git/allowed_signers"
 test "$(grep -Fc 'AAAAGENONE' "$HOME/.config/git/allowed_signers")" = 0
 grep -Fq 'AAAAGENTWO' "$HOME/.config/git/allowed_signers"
 grep -Fq 'AAAAPERSONAL' "$HOME/.config/git/allowed_signers"
+
+# Files that git and ssh execute from must not carry home-relative paths: a repository
+# can set HOME through its own .claude/settings.json, and a ~ in gpg.ssh.program or
+# core.sshCommand would then resolve inside the repository, so a plain commit or push
+# would run a file that repository supplied.
+for f in "$HOME/.claude/gitconfig" "$HOME/.claude/ssh_config"; do
+  if grep -v '^[[:space:]]*#' "$f" | grep -Fq '~/'; then
+    echo "$f still has a home-relative path in a directive" >&2; exit 1
+  fi
+done
+grep -Fq "$HOME/.claude/bin/claude-ssh-sign" "$HOME/.claude/gitconfig"
+grep -Fq "$HOME/.claude/ssh_config" "$HOME/.claude/gitconfig"
+grep -Fq "$HOME/.claude/run/agent.sock" "$HOME/.claude/ssh_config"
+test "$(jq -r '[.hooks.SessionStart[].hooks[].command] | map(select(test("claude-ssh-agent")))[0]' "$HOME/.claude/settings.json" | cut -c1)" = '/'
+# Comments keep their ~, so the installed file still reads as documentation.
+grep -q '^#.*~/' "$HOME/.claude/gitconfig"
+
+# Expanding before the comparison is what keeps the install idempotent; expanding
+# after would make every run see a difference and leave another backup behind.
+baks_before="$(ls "$HOME/.claude" | grep -c 'gitconfig.bak' || true)"
+"$ROOT_DIR/install.sh" >/dev/null
+baks_after="$(ls "$HOME/.claude" | grep -c 'gitconfig.bak' || true)"
+test "$baks_before" = "$baks_after"
+
+# ...and it still resolves as a git config.
+test "$(GIT_CONFIG_GLOBAL="$HOME/.claude/gitconfig" git -C "$HOME/repo" config --get gpg.ssh.program)" = "$HOME/.claude/bin/claude-ssh-sign"
 
 printf 'install tests passed\n'
