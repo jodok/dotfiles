@@ -159,7 +159,13 @@ install_managed_file() {
     # $HOME too, not only ~: the shell scripts spell it that way, and a loader that
     # reads HOME at runtime would build a repository-relative socket while ssh_content
     # kept the install-time one, so signing and pushing would look in different places.
-    sed "/^[[:space:]]*#/!{s|~/|$HOME/|g; s|[\$]HOME/|$HOME/|g;}" "$tmp" > "$tmp.expanded"
+    # @OP_DIR@ is where op was found at install time; falling back to /usr/bin keeps a
+    # missing op from leaving an empty PATH element, which would mean the current
+    # directory.
+    local op_dir="/usr/bin"
+    if command -v op >/dev/null 2>&1; then op_dir="$(dirname "$(command -v op)")"; fi
+    sed "/^[[:space:]]*#/!{s|~/|$HOME/|g; s|[\$]HOME/|$HOME/|g; s|@OP_DIR@|$op_dir|g;}" \
+      "$tmp" > "$tmp.expanded"
     mv "$tmp.expanded" "$tmp"
   fi
   if [ -f "$target" ] && ! cmp -s "$tmp" "$target"; then

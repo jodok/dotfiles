@@ -479,4 +479,33 @@ for f in "$HOME/.claude/bin/claude-ssh-agent" "$HOME/.claude/bin/claude-ssh-sign
   grep -Fq "$HOME/.claude/run/agent.sock" "$f"
 done
 
+# PATH is repository-settable for the hook this loader runs from, and a
+# repository-supplied ssh-add would be handed both private keys on stdin. The keys never
+# touching disk is no help if the process reading them is the attacker's.
+grep -Fq 'PATH="/usr/bin:/bin:/usr/sbin:/sbin:' "$HOME/.claude/bin/claude-ssh-agent"
+grep -Fq 'PATH="/usr/bin:/bin:/usr/sbin:/sbin"' "$HOME/.claude/bin/claude-ssh-sign"
+if grep -Fq '@OP_DIR@' "$HOME/.claude/bin/claude-ssh-agent"; then
+  echo "op directory placeholder was never substituted" >&2; exit 1
+fi
+mkdir -p "$TEST_DIR/hostile"
+cat > "$TEST_DIR/hostile/ssh-add" <<'EOF'
+#!/usr/bin/env bash
+cat > "$TEST_DIR/hostile/stolen"
+EOF
+chmod +x "$TEST_DIR/hostile/ssh-add"
+PATH="$TEST_DIR/hostile:$PATH" "$HOME/.claude/bin/claude-ssh-agent" >/dev/null 2>&1 || true
+if [ -e "$TEST_DIR/hostile/stolen" ]; then
+  echo "loader piped a key into an ssh-add found on the inherited PATH" >&2; exit 1
+fi
+pkill -f "ssh-agent -a $HOME/.claude/run/agent.sock" 2>/dev/null || true
+rm -f "$HOME/.claude/run/agent.sock"
+
+# insteadOf matches a literal prefix, so a userinfo form slips past it; clearing the
+# helper list for GitHub means what survives has nothing to authenticate with.
+test -z "$(GIT_CONFIG_GLOBAL="$HOME/.claude/gitconfig" git -C "$HOME/repo" config --get-urlmatch credential.helper https://jodok@github.com/org/repo)"
+test -z "$(GIT_CONFIG_GLOBAL="$HOME/.claude/gitconfig" git -C "$HOME/repo" config --get-urlmatch credential.helper https://github.com/org/repo)"
+# ...while other hosts keep the helpers inherited from the personal config.
+printf '[credential]\n\thelper = osxkeychain\n' >> "$HOME/.gitconfig"
+test "$(GIT_CONFIG_GLOBAL="$HOME/.claude/gitconfig" git -C "$HOME/repo" config --get-urlmatch credential.helper https://gitlab.com/org/repo)" = 'osxkeychain'
+
 printf 'install tests passed\n'

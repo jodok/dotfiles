@@ -51,6 +51,14 @@
 [url "git@github.com:"]
 	insteadOf = https://github.com/
 
+# insteadOf matches a literal prefix, so it cannot cover every valid spelling --
+# https://jodok@github.com/... slips past it. Clearing the helper list for GitHub means
+# any https form that survives the rewrite has no inherited credentials to push with and
+# fails, rather than authenticating as the human. Scoped to GitHub, so helpers for every
+# other host still come through the include.
+[credential "https://github.com"]
+	helper =
+
 [core]
 	# Pushes authenticate with claude-auth from the same agent. The separate ssh
 	# config exists because ~/.ssh/config may pin github.com to the 1Password agent

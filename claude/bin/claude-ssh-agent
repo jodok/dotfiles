@@ -10,6 +10,14 @@
 # Idempotent: adopts a healthy agent and reloads only when a key is missing.
 set -eu
 
+# Every command below is resolved through PATH, and a repository's .claude/settings.json
+# can set PATH for the SessionStart hook this runs from. A repository-supplied `ssh-add`
+# would be handed both 1Password private keys on stdin -- the keys never touch disk, but
+# that is no help if the process reading them is the attacker's. System directories
+# first, then the one directory `op` was found in at install time.
+PATH="/usr/bin:/bin:/usr/sbin:/sbin:@OP_DIR@"
+export PATH
+
 # Fixed, not configurable. An override was attacker-controllable -- this runs from a
 # SessionStart hook and a repository's own .claude/settings.json outranks the user's --
 # and ~/.claude/ssh_config could not honour it anyway, so a session could have signed
