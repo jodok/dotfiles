@@ -203,8 +203,12 @@ install_claude_git_identity() {
   if [ -z "${CLAUDE_OP_VAULT:-}" ] && [ -f "$HOME/.claude/bin/claude-ssh-agent" ]; then
     local baked
     baked="$(sed -n 's/^VAULT="\(.*\)"$/\1/p' "$HOME/.claude/bin/claude-ssh-agent" | head -1)"
+    # Only something that looks like a vault name. A loader from before the vault was
+    # baked reads VAULT="${CLAUDE_OP_VAULT:-Private}", and taking that literally as the
+    # name substitutes it straight back in -- the file never changes, so the machine
+    # stays on the runtime-read form permanently and no later install can correct it.
     case "$baked" in
-      ""|*@*) ;;
+      ""|*[!A-Za-z0-9\ ._-]*) ;;
       *) CLAUDE_OP_VAULT="$baked" ;;
     esac
   fi
