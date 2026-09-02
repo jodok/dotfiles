@@ -565,4 +565,36 @@ if grep -v '^[[:space:]]*#' "$HOME/.claude/bin/claude-ssh-agent" | grep -Fq 'CLA
   echo "a legacy loader was preserved instead of corrected" >&2; exit 1
 fi
 
+# A 1Password service-account token in the environment outranks the personal login, and
+# a service account cannot be granted a PERSONAL vault -- so with one set the keys become
+# unreadable while `op whoami` still reports success. Both the installer and the loader
+# have to fall back to the personal identity for these reads.
+rm -f "$HOME/.claude/claude-signing.pub" "$HOME/.claude/claude-auth.pub" "$HOME/.claude/settings.json"
+cat > "$TEST_DIR/bin/op" <<'EOF'
+#!/usr/bin/env bash
+# Stands in for a service account that authenticates fine but cannot see the vault.
+case "$1" in
+  whoami) exit 0 ;;
+  read)
+    [ -n "${OP_SERVICE_ACCOUNT_TOKEN:-}" ] && exit 1
+    case "$2" in
+      *claude-auth*) printf 'ssh-ed25519 AAAAFALLBACKAUTH comment' ;;
+      *) printf 'ssh-ed25519 AAAAFALLBACKSIGN comment' ;;
+    esac
+    ;;
+  *) exit 1 ;;
+esac
+EOF
+chmod +x "$TEST_DIR/bin/op"
+OP_SERVICE_ACCOUNT_TOKEN=ops_pretend "$ROOT_DIR/install.sh" >/dev/null
+grep -Fq 'AAAAFALLBACKSIGN' "$HOME/.claude/claude-signing.pub"
+grep -Fq 'AAAAFALLBACKAUTH' "$HOME/.claude/claude-auth.pub"
+test -f "$HOME/.claude/settings.json"
+# The loader must make the same fallback; it fails later at ssh-add on a fake key, so
+# assert on the message rather than the exit status.
+out="$(OP_SERVICE_ACCOUNT_TOKEN=ops_pretend "$HOME/.claude/bin/claude-ssh-agent" 2>&1 || true)"
+case "$out" in
+  *"cannot read op://"*) echo "loader did not fall back past the service-account token" >&2; exit 1 ;;
+esac
+
 printf 'install tests passed\n'
