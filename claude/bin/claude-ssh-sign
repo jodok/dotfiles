@@ -1,0 +1,15 @@
+#!/bin/sh
+# git signs by invoking gpg.ssh.program (ssh-keygen -Y sign), which finds its key
+# through SSH_AUTH_SOCK in the environment — not through core.sshCommand. Without
+# this shim, signing reaches for whatever agent the shell happens to have (the
+# 1Password one, which does not hold these keys) and fails with "Couldn't find key
+# in agent?" while pushes still work, which reads like a signing-key problem rather
+# than an agent-selection one. Pinning the socket here means GIT_CONFIG_GLOBAL alone
+# is enough, with no second variable to remember.
+# Same reason as the loader: git invokes this, and PATH is repository-settable, so
+# `ssh-keygen` must come from a system directory rather than whatever PATH names.
+PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+export PATH
+SSH_AUTH_SOCK="$HOME/.claude/run/agent.sock"
+export SSH_AUTH_SOCK
+exec ssh-keygen "$@"

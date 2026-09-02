@@ -16,6 +16,10 @@ UPDATE_URL="$RAW_BASE/update.sh"
 UPDATE_CHECK_URL="$RAW_BASE/zsh/update-check.zsh"
 AGENT_RULES_URL="$RAW_BASE/agents/global-rules.md"
 CLAUDE_MD_URL="$RAW_BASE/agents/claude.md"
+CLAUDE_GITCONFIG_URL="$RAW_BASE/claude/gitconfig"
+CLAUDE_SSH_CONFIG_URL="$RAW_BASE/claude/ssh_config"
+CLAUDE_SSH_AGENT_URL="$RAW_BASE/claude/bin/claude-ssh-agent"
+CLAUDE_SSH_SIGN_URL="$RAW_BASE/claude/bin/claude-ssh-sign"
 
 log() {
   printf '\n[%s] %s\n' "dotfiles" "$*"
@@ -135,14 +139,35 @@ patch_zshrc() {
   log "patched $zshrc"
 }
 
+# A third argument asks for `~/` to be rendered as an absolute path in directive
+# lines. Files that git and ssh EXECUTE from need it: a repository's .claude/settings
+# outranks the user's and can set HOME, and gpg.ssh.program or core.sshCommand written
+# as ~/... would then resolve inside the repository, so a routine commit would run a
+# file the repository supplied. Expanding before the comparison keeps the install
+# idempotent -- the expanded form is what gets compared on the next run.
 install_managed_file() {
   local url="$1"
   local target="$2"
+  local expand="${3:-}"
   local tmp
 
   tmp="$(mktemp)"
   curl -fsSL --connect-timeout "$CURL_CONNECT_TIMEOUT" \
     --max-time "$CURL_MAX_TIME" "$url" -o "$tmp"
+  if [ -n "$expand" ]; then
+    # Comments keep their ~ so the installed file still reads as documentation.
+    # $HOME too, not only ~: the shell scripts spell it that way, and a loader that
+    # reads HOME at runtime would build a repository-relative socket while ssh_content
+    # kept the install-time one, so signing and pushing would look in different places.
+    # @OP_DIR@ is where op was found at install time; falling back to /usr/bin keeps a
+    # missing op from leaving an empty PATH element, which would mean the current
+    # directory.
+    local op_dir="/usr/bin"
+    if command -v op >/dev/null 2>&1; then op_dir="$(dirname "$(command -v op)")"; fi
+    sed "/^[[:space:]]*#/!{s|~/|$HOME/|g; s|[\$]HOME/|$HOME/|g; s|@OP_DIR@|$op_dir|g; \
+      s|@OP_VAULT@|${CLAUDE_OP_VAULT:-Private}|g;}" "$tmp" > "$tmp.expanded"
+    mv "$tmp.expanded" "$tmp"
+  fi
   if [ -f "$target" ] && ! cmp -s "$tmp" "$target"; then
     backup_file "$target"
   fi
@@ -164,6 +189,236 @@ backup_file() {
 
   cp "$target" "$backup"
   log "backed up $target to $backup"
+}
+
+# The signing identity agents use. Key material is never committed: the public half
+# is read from 1Password at install time, and the private halves are only ever
+# streamed into an ssh-agent by claude-ssh-agent.
+install_claude_git_identity() {
+  # An ordinary run must not silently re-point a non-default vault at Private. The
+  # loader is rewritten before the op guard below, so a run without CLAUDE_OP_VAULT
+  # would rebake it while the public keys from the other vault stay in place -- working
+  # until the agent socket goes away, then failing every commit and push. Absent an
+  # explicit choice, whatever is already installed is the choice.
+  if [ -z "${CLAUDE_OP_VAULT:-}" ] && [ -f "$HOME/.claude/bin/claude-ssh-agent" ]; then
+    local baked
+    baked="$(sed -n 's/^VAULT="\(.*\)"$/\1/p' "$HOME/.claude/bin/claude-ssh-agent" | head -1)"
+    case "$baked" in
+      ""|*@*) ;;
+      *) CLAUDE_OP_VAULT="$baked" ;;
+    esac
+  fi
+
+  install_managed_file "$CLAUDE_GITCONFIG_URL" "$HOME/.claude/gitconfig" expand
+  install_managed_file "$CLAUDE_SSH_CONFIG_URL" "$HOME/.claude/ssh_config" expand
+  install_managed_file "$CLAUDE_SSH_AGENT_URL" "$HOME/.claude/bin/claude-ssh-agent" expand
+  install_managed_file "$CLAUDE_SSH_SIGN_URL" "$HOME/.claude/bin/claude-ssh-sign" expand
+  chmod 700 "$HOME/.claude/bin/claude-ssh-agent" "$HOME/.claude/bin/claude-ssh-sign"
+  chmod 600 "$HOME/.claude/gitconfig" "$HOME/.claude/ssh_config"
+
+  # See the comment in claude/gitconfig: GIT_CONFIG_GLOBAL replaces git's XDG global
+  # file too, so the managed config has to name whichever path is in effect here. A
+  # separate file rather than a line in gitconfig itself, which install_managed_file
+  # rewrites from the repo copy on every run.
+  printf '[include]\n\tpath = %s\n' "${XDG_CONFIG_HOME:-$HOME/.config}/git/config" \
+    > "$HOME/.claude/gitconfig.xdg"
+
+  if ! command -v op >/dev/null 2>&1 || ! op whoami >/dev/null 2>&1; then
+    log "1Password CLI unavailable or signed out; skipping the signing key (run install again once 'op signin' works)"
+    return
+  fi
+
+  local vault="${CLAUDE_OP_VAULT:-Private}"
+  # Both halves are read before either is written, so the pair on disk always comes
+  # from one run. Writing the signing key and then failing on the auth key left a
+  # mixed generation behind -- new signing key, previous auth key -- which survives as
+  # a complete-looking identity because the activation guard only tests that both
+  # files exist. After a rotation the loader would hold the new private auth key while
+  # ssh stayed pinned to the old public one, and every push would fail.
+  local pub authpub
+  pub="$(op read "op://$vault/claude-signing/public key" 2>/dev/null || true)"
+  authpub="$(op read "op://$vault/claude-auth/public key" 2>/dev/null || true)"
+  if [ -z "$pub" ] || [ -z "$authpub" ]; then
+    log "could not read both claude-signing and claude-auth from the $vault vault; leaving the installed keys alone"
+    return
+  fi
+  printf '%s\n' "$pub" > "$HOME/.claude/claude-signing.pub"
+  chmod 644 "$HOME/.claude/claude-signing.pub"
+  # claude-ssh-agent compares what the agent holds against these files, so a rotated
+  # key is noticed without calling 1Password on every session start.
+  printf '%s\n' "$authpub" > "$HOME/.claude/claude-auth.pub"
+  chmod 644 "$HOME/.claude/claude-auth.pub"
+
+  # Appended, never rewritten: this file is the user's, and it usually lists their
+  # own signing keys too. Only the line that is missing is added.
+  local signers="$HOME/.config/git/allowed_signers"
+  local line
+  line="jodok@batlogg.com $(printf '%s' "$pub" | awk '{print $1" "$2}')"
+  mkdir -p "$(dirname "$signers")"
+  touch "$signers"
+  # Retire the key this installer put there last time. Appending alone would leave a
+  # rotated-out key trusted forever, so a key rotated BECAUSE it leaked would keep
+  # producing commits that verify locally as jodok@batlogg.com -- which is most of
+  # what rotating it was for. Only the exact line we recorded writing is removed, so
+  # the user's own signers, and anything they added by hand, are untouched.
+  local managed="$HOME/.claude/allowed_signers.installed"
+  local retired=1
+  if [ -f "$managed" ]; then
+    local prev
+    prev="$(cat "$managed")"
+    if [ -n "$prev" ] && [ "$prev" != "$line" ]; then
+      local rc=0
+      # Braces so the shell's own redirection error is quiet too; the log line below
+      # says what happened in terms the reader can act on.
+      { grep -vxF "$prev" "$signers" > "$signers.tmp"; } 2>/dev/null || rc=$?
+      # 1 is "no lines left", a legitimate result here; 2 and up are errors, and so is
+      # a redirection that never produced the file -- an unwritable directory reports
+      # 1 with nothing written, and moving that would delete the user's own signers.
+      if [ "$rc" -le 1 ] && [ -f "$signers.tmp" ]; then
+        mv "$signers.tmp" "$signers"
+        log "retired the previous claude-signing key from $signers"
+      else
+        rm -f "$signers.tmp"
+        retired=0
+        log "could not rewrite $signers; the previous claude-signing key is still trusted"
+      fi
+    fi
+  fi
+  if ! grep -qxF "$line" "$signers"; then
+    printf '%s\n' "$line" >> "$signers"
+    log "added claude-signing to $signers"
+  fi
+  # Only once the old line is actually gone. Recording the new one after a failed
+  # retirement would make the next run compare the new key against itself and never
+  # try again, leaving a key that was rotated *because* it leaked trusted forever.
+  if [ "$retired" -eq 1 ]; then
+    printf '%s\n' "$line" > "$managed"
+  else
+    log "will retry retiring the previous key on the next install"
+  fi
+  log "installed the agent git identity"
+}
+
+# Make the identity the default for Claude Code sessions rather than something to
+# remember per command. Without this the files install but git still falls through
+# to the personal global config, which signs through the 1Password desktop app and
+# prompts on every commit.
+#
+# settings.json is the user's file — theme, notifications, their own hooks — so this
+# merges into it and never rewrites it. Idempotent: re-running replaces only our own
+# SessionStart hook, and only the surrounding entry if that hook was all it held.
+install_claude_settings() {
+  local settings="$HOME/.claude/settings.json"
+  # Only switch git over once the identity actually exists. The config it selects sets
+  # commit.gpgsign and a signing key; without the key every commit fails, which would
+  # turn "1Password was locked, so we skipped a step" into "git no longer works".
+  # Both halves, not just the signing one: the loader and the ssh config each need
+  # claude-auth, so activating on the signing key alone would redirect pushes to an
+  # identity that cannot be loaded.
+  if [ ! -f "$HOME/.claude/claude-signing.pub" ] || [ ! -f "$HOME/.claude/claude-auth.pub" ]; then
+    log "identity incomplete (need both claude-signing.pub and claude-auth.pub); leaving settings.json alone"
+    return
+  fi
+  # Not silenced. If the vault is locked, every commit in the session fails with
+  # "No private key found for public key" -- which names the key, not the cause.
+  # One legible line at session start beats a clean start and a baffling failure.
+  # Absolute, for the same reason as the expansion above: a repository that sets HOME
+  # would otherwise point this hook at its own .claude/bin/claude-ssh-agent, which the
+  # session then runs at startup.
+  local cmd="$HOME/.claude/bin/claude-ssh-agent || echo \"claude-ssh-agent: commits will fail until op is signed in and this is re-run\""
+  # Match the exact command, never a substring: a user hook that merely mentions
+  # claude-ssh-agent -- a wrapper, a monitor -- would otherwise be deleted on the first
+  # run, which is the opposite of the promise that their hooks survive. The previous
+  # command is recorded so a changed one is still replaced rather than duplicated.
+  local hookmark="$HOME/.claude/settings-hook.installed"
+  local prevcmd=""
+  [ -f "$hookmark" ] && prevcmd="$(cat "$hookmark")"
+  local tmp merged
+  mkdir -p "$HOME/.claude"
+  [ -f "$settings" ] || printf '{}\n' > "$settings"
+  tmp="$(mktemp)"
+
+  # Which JSON tool does the merge. "auto" prefers jq and falls back to python3;
+  # naming one explicitly is how the tests reach the fallback on a machine that has
+  # both, and how a user can pin the behaviour if their jq is unusual.
+  local tool="${CLAUDE_JSON_TOOL:-auto}"
+  if { [ "$tool" = "auto" ] || [ "$tool" = "jq" ]; } && command -v jq >/dev/null 2>&1; then
+    merged=$(jq --arg cfg "$HOME/.claude/gitconfig" --arg cmd "$cmd" --arg prev "$prevcmd" '
+      .env = ((.env // {}) + {GIT_CONFIG_GLOBAL: $cfg})
+      | .hooks = (.hooks // {})
+      | .hooks.SessionStart = (
+          ((.hooks.SessionStart // [])
+            | map(
+                if ((.hooks // []) | map(.command // "") | any(. == $cmd or (. == $prev and $prev != "")))
+                then ((.hooks |= map(select((.command // "") as $c
+                        | ($c != $cmd) and (($c != $prev) or ($prev == "")))))
+                      | if (.hooks | length) == 0 then empty else . end)
+                else . end))
+          + [{hooks: [{type: "command", command: $cmd, timeout: 30,
+                       statusMessage: "Loading the git signing identity"}]}])
+    ' "$settings" 2>/dev/null) || merged=""
+  elif { [ "$tool" = "auto" ] || [ "$tool" = "python3" ]; } && command -v python3 >/dev/null 2>&1; then
+    merged=$(CLAUDE_GITCONFIG="$HOME/.claude/gitconfig" CLAUDE_HOOK_CMD="$cmd" CLAUDE_HOOK_PREV="$prevcmd" python3 - "$settings" <<'PYEOF' 2>/dev/null
+import json, os, sys
+p = sys.argv[1]
+# A parse failure must fail the merge, not start from {} -- replacing a settings
+# file we cannot read is exactly the destructive rewrite this installer forbids.
+try:
+    d = json.load(open(p))
+except Exception:
+    raise SystemExit(1)
+if not isinstance(d, dict):
+    raise SystemExit(1)
+cmd = os.environ["CLAUDE_HOOK_CMD"]
+prev = os.environ.get("CLAUDE_HOOK_PREV") or None
+def ours(c):
+    c = c or ""
+    return c == cmd or (prev is not None and c == prev)
+d.setdefault("env", {})["GIT_CONFIG_GLOBAL"] = os.environ["CLAUDE_GITCONFIG"]
+hooks = d.setdefault("hooks", {})
+# Drop only OUR hook object, not the entry around it: a SessionStart entry may hold
+# several hooks plus a matcher, and someone who folded ours in by hand would lose all
+# of it on the next install. The entry itself goes only if we emptied it.
+kept = []
+for e in hooks.get("SessionStart", []):
+    hs = e.get("hooks", [])
+    if any(ours(h.get("command")) for h in hs):
+        e = dict(e)
+        e["hooks"] = [h for h in hs if not ours(h.get("command"))]
+        if not e["hooks"]:
+            continue
+    kept.append(e)
+kept.append({"hooks": [{"type": "command", "command": cmd, "timeout": 30,
+                        "statusMessage": "Loading the git signing identity"}]})
+hooks["SessionStart"] = kept
+print(json.dumps(d, indent=2))
+PYEOF
+) || merged=""
+  else
+    # Unreachable in practice: main() requires python3 for upsert_line, so an install
+    # without it stops earlier. A guard, not a promise.
+    rm -f "$tmp"
+    log "no JSON tool available; skipping the settings merge"
+    return
+  fi
+
+  if [ -z "$merged" ]; then
+    rm -f "$tmp"
+    log "could not parse $settings; leaving it untouched"
+    return
+  fi
+  printf '%s\n' "$merged" > "$tmp"
+  if ! cmp -s "$tmp" "$settings"; then
+    backup_file "$settings"
+    mv "$tmp" "$settings"
+    chmod 600 "$settings"
+    log "merged the agent identity into $settings"
+  else
+    rm -f "$tmp"
+  fi
+  # Recorded only once the merge has actually happened, so the next run knows which
+  # exact command to replace rather than falling back to a substring.
+  printf '%s\n' "$cmd" > "$hookmark"
 }
 
 install_agent_rules() {
@@ -198,6 +453,8 @@ main() {
   chmod +x "$CUSTOM_DIR/update.sh"
 
   install_agent_rules
+  install_claude_git_identity
+  install_claude_settings
 
   touch "$HOME/.zshrc.local" "$HOME/.zshenv.local" "$HOME/.oh-my-jodok.zsh"
   patch_zshrc

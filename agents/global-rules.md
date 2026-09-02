@@ -17,6 +17,36 @@ repository's `AGENTS.md`.
 - Author every commit as `Jodok Batlogg <jodok@batlogg.com>`. Agents and
   bots never take authorship; they credit themselves with a
   `Co-Authored-By:` trailer instead.
+- **Agents sign and push with their own keys, from 1Password, through their own
+  agent.** The installer sets `env.GIT_CONFIG_GLOBAL` for Claude Code sessions, so
+  git already uses it — nothing to pass by hand. Do **not** force that variable
+  when it is absent: the installer deliberately leaves it unset until both keys are
+  provisioned, and the config it names sets `commit.gpgsign` with a signing key that
+  would not exist, so forcing it turns a skipped 1Password step into a git that
+  cannot commit. If `~/.claude/claude-signing.pub` is missing, provisioning was
+  skipped — run `op signin` and `install.sh` again rather than working around it.
+  What the setup gives you: commits are signed by `claude-signing`, pushes authenticate
+  as `claude-auth`, both held in 1Password and loaded into a plain `ssh-agent`
+  at `~/.claude/run/agent.sock` by `~/.claude/bin/claude-ssh-agent`. No private
+  key is written to disk — `op read` streams each one into `ssh-add -` — there
+  are no approval prompts, and it does not depend on the 1Password desktop
+  agent, which prompts and fails intermittently. The identity is separate, so it
+  can be revoked on GitHub without touching Jodok's own keys.
+  - Re-run `~/.claude/bin/claude-ssh-agent` if the socket is missing; it is
+    idempotent and reloads only when a key is absent. It needs `op` signed in.
+  - Four things this rests on, each of which cost a debugging round. `op read`
+    must use `?ssh-format=openssh`, because the default field is PKCS#8 and
+    `ssh-add` rejects it, and the output needs a trailing newline appended.
+    `~/.claude/ssh_config` is git's own and deliberately does not include
+    `~/.ssh/config`: including it let an ssh alias whose `HostName` is
+    `github.com` supply a personal key and push as the human account, and there
+    is no way to inherit routing without inheriting identities. So an ssh alias
+    means nothing to agent git — add the host block to that file instead. Signing runs `ssh-keygen`,
+    which takes its agent from `SSH_AUTH_SOCK` and not from `core.sshCommand`,
+    so `gpg.ssh.program` points at a shim that pins the socket; without it
+    commits fail with `Couldn't find key in agent?`. And `gpg.ssh.allowedSignersFile`
+    must list `<principal> <keytype> <key>` — omit the key type and verification
+    fails while signing still appears to work.
 - `main` is protected: no direct pushes, no force pushes, linear history.
   Every change lands through a pull request.
 - Branch names: `<agent>/<topic>` for agent work (`claude/...`,

@@ -21,6 +21,24 @@ The installer is idempotent and will:
 - install `agents/global-rules.md` to `~/.agents/global-rules.md`
 - install `agents/claude.md` to `~/.claude/CLAUDE.md`
 - link `~/.codex/AGENTS.md` to `~/.agents/global-rules.md`
+- install `claude/gitconfig`, `claude/ssh_config` and `claude/bin/*` under
+  `~/.claude/`, the git identity coding agents commit and push with
+- write `~/.claude/claude-signing.pub` and `~/.claude/claude-auth.pub` from the
+  matching items in 1Password — the agent loader compares what it holds against
+  these, so a rotated key is noticed without calling 1Password every session, and add
+  that key to `~/.config/git/allowed_signers` if it is not already listed. Your own
+  signers are never touched: only the exact line a previous install recorded writing
+  is retired, so a rotated key stops being trusted instead of staying valid forever. Skipped with a note when the 1Password
+  CLI is missing or signed out; no private key is ever written to disk
+- merge two keys into `~/.claude/settings.json` — **only once a signing key
+  exists**, since the config it selects sets `commit.gpgsign` and activating it
+  without a key would leave git unable to commit at all — so the identity is the
+  default
+  rather than something to remember on every command: `env.GIT_CONFIG_GLOBAL`,
+  and a `SessionStart` hook that loads the keys into the agent. **Merged, never
+  rewritten** — your theme, your other settings and your own SessionStart hooks
+  survive, and a re-run adds no second copy. A settings file that is not valid
+  JSON is left untouched rather than replaced
 - back up any differing existing file before replacing it, using `<file>.bak`
   and then numbered `<file>.bak.N` paths so an earlier backup is never replaced
 - patch `~/.zshrc` so it contains:
@@ -66,6 +84,22 @@ zstyle ':omj:update' mode disabled
     jodok.zsh-theme
 ~/.agents/
   global-rules.md      # shared rules for all coding agents
+claude/                # installed to ~/.claude/
+  gitconfig            # the identity agents commit and push with (managed: do not
+                       #   `git config --global` into it; put durable settings in
+                       #   ~/.gitconfig, which it includes)
+  ssh_config           # every git remote via the agent's own ssh-agent; does not
+                       #   include ~/.ssh/config, so ssh aliases do not apply
+  bin/claude-ssh-agent # loads the keys from 1Password into a plain ssh-agent
+  bin/claude-ssh-sign  # pins SSH_AUTH_SOCK for ssh-keygen when git signs
+```
+
+`CLAUDE_JSON_TOOL` picks which tool merges `settings.json` — `auto` (default,
+prefers `jq`), `jq`, or `python3`. `CLAUDE_OP_VAULT` names the 1Password vault
+(default `Private`) — it is baked into the installed loader, so re-run the installer to
+change it rather than exporting it in a session.
+
+```
 ~/.claude/CLAUDE.md    # imports ~/.agents/global-rules.md
 ~/.codex/AGENTS.md     # symlink to ~/.agents/global-rules.md
 ```

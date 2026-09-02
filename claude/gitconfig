@@ -1,0 +1,76 @@
+# The git identity agents commit and push with. Used by pointing GIT_CONFIG_GLOBAL
+# at this file; it includes the real global config first, so aliases and everything
+# else still apply and only the identity differs.
+#
+#   GIT_CONFIG_GLOBAL=~/.claude/gitconfig git commit -m "…"
+#
+# MANAGED FILE -- install.sh overwrites it. While GIT_CONFIG_GLOBAL points here,
+# `git config --global …` writes into THIS file rather than ~/.gitconfig, so anything
+# set that way is lost on the next install (kept as a .bak). Put durable settings in
+# ~/.gitconfig, which the include below pulls in.
+#
+# Signing goes through ssh-keygen and the agent at ~/.claude/run/agent.sock (see
+# claude-ssh-agent), never through op-ssh-sign: the 1Password desktop app is the
+# part that prompts and fails intermittently.
+# GIT_CONFIG_GLOBAL replaces BOTH of git's global files, not just ~/.gitconfig: git
+# also reads $XDG_CONFIG_HOME/git/config (default ~/.config/git/config), and dropping
+# it would silently take away credential helpers, url.*.insteadOf rewrites and aliases
+# from every agent session -- the sort of loss that surfaces as a push failing for no
+# visible reason. install.sh writes gitconfig.xdg pointing at whichever path is in
+# effect on this machine; a missing include is ignored, so an uninstalled or
+# default-path setup costs nothing. Order matches git's own: XDG first, ~/.gitconfig
+# last, so ~/.gitconfig still wins. XDG_CONFIG_HOME is read at install time -- change
+# it and re-run install.sh.
+[include]
+	path = ~/.claude/gitconfig.xdg
+[include]
+	path = ~/.gitconfig
+
+[user]
+	name = Jodok Batlogg
+	email = jodok@batlogg.com
+	# Written by install.sh from the 1Password item, so no key material lives in
+	# this repository — which is public.
+	signingkey = ~/.claude/claude-signing.pub
+
+[gpg]
+	format = ssh
+[gpg "ssh"]
+	program = ~/.claude/bin/claude-ssh-sign
+	allowedSignersFile = ~/.config/git/allowed_signers
+
+[commit]
+	gpgsign = true
+
+# core.sshCommand governs the ssh transport only. An https remote would instead use the
+# credential helpers inherited from the personal config and push as the human account,
+# which is the same bypass the ssh side is built to prevent -- and https is the default
+# for anything cloned from the web UI or by `gh`. Rewriting the URL sends those through
+# the same key. A repository the agent key cannot reach now fails, rather than quietly
+# succeeding as Jodok.
+[url "git@github.com:"]
+	insteadOf = https://github.com/
+	insteadOf = https://jodok@github.com/
+	insteadOf = http://github.com/
+	insteadOf = git://github.com/
+
+# insteadOf matches a literal prefix, so the list above cannot be exhaustive -- any
+# other userinfo spelling would slip past it. Clearing the helper list for GitHub takes
+# the inherited credentials away from whatever survives; scoped to GitHub, so helpers
+# for every other host still come through the include.
+[credential "https://github.com"]
+	helper =
+
+[core]
+	# An empty helper list is not the same as failing closed: with no helper, git falls
+	# back to core.askPass, SSH_ASKPASS or a terminal prompt, and an inherited askpass
+	# could still hand over a personal token. Pointing it at false means a credential
+	# git cannot get from a helper is not obtained at all -- which for an unattended
+	# agent session is the only useful answer anyway, since there is nobody to prompt.
+	# GIT_ASKPASS in the environment still outranks this; see the settings-precedence
+	# note in the global rules.
+	askPass = /usr/bin/false
+	# Pushes authenticate with claude-auth from the same agent. The separate ssh
+	# config exists because ~/.ssh/config may pin github.com to the 1Password agent
+	# with `IdentitiesOnly yes`, which would never offer this key.
+	sshCommand = ssh -F ~/.claude/ssh_config

@@ -1,0 +1,84 @@
+#!/bin/sh
+# Load the agent git identity into a long-lived ssh-agent, from 1Password, without
+# ever writing a private key to disk.
+#
+# Not the 1Password SSH agent: that one prompts for approval, and signing and SSH
+# auth both go through the desktop app, so they fail together and intermittently
+# ("failed to fill whole buffer"). This is plain OpenSSH, holds only these two keys,
+# and keeps them in its own memory. `op read` streams each key into `ssh-add -`.
+#
+# Idempotent: adopts a healthy agent and reloads only when a key is missing.
+set -eu
+
+# Every command below is resolved through PATH, and a repository's .claude/settings.json
+# can set PATH for the SessionStart hook this runs from. A repository-supplied `ssh-add`
+# would be handed both 1Password private keys on stdin -- the keys never touch disk, but
+# that is no help if the process reading them is the attacker's. System directories
+# first, then the one directory `op` was found in at install time.
+PATH="/usr/bin:/bin:/usr/sbin:/sbin:@OP_DIR@"
+export PATH
+
+# Fixed, not configurable. An override was attacker-controllable -- this runs from a
+# SessionStart hook and a repository's own .claude/settings.json outranks the user's --
+# and ~/.claude/ssh_config could not honour it anyway, so a session could have signed
+# commits against one agent while every push looked for another. One path, named in
+# one place, is the only version of this that cannot disagree with itself.
+SOCK="$HOME/.claude/run/agent.sock"
+
+# A leftover regular file here would otherwise be chmodded and unlinked on the way to
+# creating the socket.
+if [ -e "$SOCK" ] && [ ! -S "$SOCK" ]; then
+  echo "claude-ssh-agent: $SOCK exists and is not a socket; refusing to replace it" >&2
+  exit 1
+fi
+
+# Substituted by install.sh, not read at runtime. A repository can set the environment
+# for the hook this runs from, and would otherwise redirect these op read calls at
+# identically named items in another vault it can reach -- whose keys then sit in the
+# agent at a socket path it knows. It also has to be baked to work at all: installing
+# with CLAUDE_OP_VAULT=Work writes Work's public keys, and a later session without that
+# variable exported would look in Private and fail every commit and push.
+VAULT="@OP_VAULT@"
+# By title, not by item id: readable, and it survives an item being recreated.
+SIGNING="op://$VAULT/claude-signing/private key?ssh-format=openssh"
+AUTH="op://$VAULT/claude-auth/private key?ssh-format=openssh"
+
+# Reuse the agent only when it holds the keys we actually want, by fingerprint.
+# Counting them is not enough: after either 1Password item is rotated the agent still
+# holds two keys -- the old ones -- so a count check would report success while every
+# commit and push fails against the revoked pair. The public halves are written by
+# install.sh, so this costs no 1Password call on the common path.
+holds_expected_keys() {
+  [ -S "$SOCK" ] || return 1
+  SSH_AUTH_SOCK="$SOCK" ssh-add -l >/dev/null 2>&1 || return 1
+  loaded="$(SSH_AUTH_SOCK="$SOCK" ssh-add -l | awk '{print $2}')"
+  for pub in "$HOME/.claude/claude-signing.pub" "$HOME/.claude/claude-auth.pub"; do
+    # An expected key we cannot name cannot be checked; rebuild rather than assume.
+    [ -f "$pub" ] || return 1
+    want="$(ssh-keygen -lf "$pub" 2>/dev/null | awk '{print $2}')"
+    [ -n "$want" ] || return 1
+    printf '%s\n' "$loaded" | grep -qxF "$want" || return 1
+  done
+  return 0
+}
+
+if holds_expected_keys; then
+  echo "claude-ssh-agent: already loaded at $SOCK"
+  exit 0
+fi
+
+command -v op >/dev/null 2>&1 || { echo "claude-ssh-agent: the 1Password CLI (op) is required" >&2; exit 1; }
+op whoami >/dev/null 2>&1 || { echo "claude-ssh-agent: op is not signed in — run 'op signin' first" >&2; exit 1; }
+
+mkdir -p "$(dirname "$SOCK")"
+chmod 700 "$(dirname "$SOCK")"
+rm -f "$SOCK"
+ssh-agent -a "$SOCK" >/dev/null
+
+# `op read` emits no trailing newline and ssh-add needs one; the default field is
+# PKCS#8, which ssh-add rejects, hence ssh-format=openssh above.
+for item in "$SIGNING" "$AUTH"; do
+  printf '%s\n' "$(op read "$item")" | SSH_AUTH_SOCK="$SOCK" ssh-add - >/dev/null 2>&1 ||
+    { echo "claude-ssh-agent: could not load $item" >&2; exit 1; }
+done
+echo "claude-ssh-agent: loaded $(SSH_AUTH_SOCK="$SOCK" ssh-add -l | wc -l | tr -d ' ') keys into $SOCK"
