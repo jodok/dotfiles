@@ -346,4 +346,54 @@ test "$(GIT_CONFIG_GLOBAL="$HOME/.claude/gitconfig" git -C "$HOME/repo" config -
 test "$(GIT_CONFIG_GLOBAL="$HOME/.claude/gitconfig" git -C "$HOME/repo" config --get alias.yyy)" = 'log'
 "$ROOT_DIR/install.sh" >/dev/null
 
+# The loader runs from a SessionStart hook, and a repository's .claude/settings.json
+# outranks the user's, so CLAUDE_SSH_AUTH_SOCK is attacker-controllable. An
+# unvalidated path gets its parent chmodded and is then unlinked, which is a way to
+# delete any file the user can write.
+victim="$HOME/victim.conf"
+printf 'precious\n' > "$victim"
+if CLAUDE_SSH_AUTH_SOCK="$victim" "$HOME/.claude/bin/claude-ssh-agent" >/dev/null 2>&1; then
+  echo "loader accepted a socket path outside ~/.claude" >&2; exit 1
+fi
+grep -Fq 'precious' "$victim"
+mkdir -p "$HOME/.claude/run"
+printf 'precious\n' > "$HOME/.claude/run/notasocket"
+if CLAUDE_SSH_AUTH_SOCK="$HOME/.claude/run/notasocket" "$HOME/.claude/bin/claude-ssh-agent" >/dev/null 2>&1; then
+  echo "loader replaced an existing non-socket" >&2; exit 1
+fi
+grep -Fq 'precious' "$HOME/.claude/run/notasocket"
+# A path that does not exist yet is the case the confinement alone answers: the
+# non-socket check cannot see it, and the loader would otherwise mkdir -p and chmod
+# 700 whatever directory it names.
+if CLAUDE_SSH_AUTH_SOCK="$HOME/elsewhere/nested/agent.sock" "$HOME/.claude/bin/claude-ssh-agent" >/dev/null 2>&1; then
+  echo "loader accepted a socket path outside ~/.claude" >&2; exit 1
+fi
+test ! -d "$HOME/elsewhere/nested"
+if CLAUDE_SSH_AUTH_SOCK="$HOME/.claude/../traversed/agent.sock" "$HOME/.claude/bin/claude-ssh-agent" >/dev/null 2>&1; then
+  echo "loader accepted a traversal path" >&2; exit 1
+fi
+test ! -d "$HOME/traversed"
+grep -Fq 'precious' "$victim"
+
+# A half-successful provisioning run must not leave a mixed generation on disk: the
+# activation guard only tests that both files exist, so a new signing key beside the
+# previous auth key would look complete and would fail every push after a rotation.
+cat > "$TEST_DIR/bin/op" <<'EOF'
+#!/usr/bin/env bash
+case "$1" in
+  whoami) exit 0 ;;
+  read)
+    case "$2" in
+      *claude-auth*) exit 1 ;;
+      *) printf 'ssh-ed25519 AAAANEWSIGNING comment' ;;
+    esac
+    ;;
+  *) exit 1 ;;
+esac
+EOF
+chmod +x "$TEST_DIR/bin/op"
+"$ROOT_DIR/install.sh" >/dev/null
+test "$(grep -Fc 'AAAANEWSIGNING' "$HOME/.claude/claude-signing.pub")" = 0
+grep -Fq 'AAAAAUTHKEY' "$HOME/.claude/claude-auth.pub"
+
 printf 'install tests passed\n'

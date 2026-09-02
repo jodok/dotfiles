@@ -194,23 +194,25 @@ install_claude_git_identity() {
   fi
 
   local vault="${CLAUDE_OP_VAULT:-Private}"
-  local pub
+  # Both halves are read before either is written, so the pair on disk always comes
+  # from one run. Writing the signing key and then failing on the auth key left a
+  # mixed generation behind -- new signing key, previous auth key -- which survives as
+  # a complete-looking identity because the activation guard only tests that both
+  # files exist. After a rotation the loader would hold the new private auth key while
+  # ssh stayed pinned to the old public one, and every push would fail.
+  local pub authpub
   pub="$(op read "op://$vault/claude-signing/public key" 2>/dev/null || true)"
-  if [ -z "$pub" ]; then
-    log "no claude-signing item in the $vault vault; skipping the signing key"
+  authpub="$(op read "op://$vault/claude-auth/public key" 2>/dev/null || true)"
+  if [ -z "$pub" ] || [ -z "$authpub" ]; then
+    log "could not read both claude-signing and claude-auth from the $vault vault; leaving the installed keys alone"
     return
   fi
   printf '%s\n' "$pub" > "$HOME/.claude/claude-signing.pub"
   chmod 644 "$HOME/.claude/claude-signing.pub"
-  # The auth key's public half too: claude-ssh-agent compares what the agent holds
-  # against these files, so a rotated key is noticed without calling 1Password on
-  # every session start.
-  local authpub
-  authpub="$(op read "op://$vault/claude-auth/public key" 2>/dev/null || true)"
-  if [ -n "$authpub" ]; then
-    printf '%s\n' "$authpub" > "$HOME/.claude/claude-auth.pub"
-    chmod 644 "$HOME/.claude/claude-auth.pub"
-  fi
+  # claude-ssh-agent compares what the agent holds against these files, so a rotated
+  # key is noticed without calling 1Password on every session start.
+  printf '%s\n' "$authpub" > "$HOME/.claude/claude-auth.pub"
+  chmod 644 "$HOME/.claude/claude-auth.pub"
 
   # Appended, never rewritten: this file is the user's, and it usually lists their
   # own signing keys too. Only the line that is missing is added.
