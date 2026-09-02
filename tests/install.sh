@@ -329,4 +329,21 @@ printf '{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"~/.clau
 "$ROOT_DIR/install.sh" >/dev/null
 test "$(jq -r '.hooks.SessionStart | length' "$HOME/.claude/settings.json")" = 1
 
+# GIT_CONFIG_GLOBAL replaces git's XDG global config as well as ~/.gitconfig, so the
+# managed config has to include it or every agent session silently loses credential
+# helpers, url rewrites and aliases. Resolved at install time, so a custom
+# XDG_CONFIG_HOME has to be honoured too.
+grep -Fq "path = $HOME/.config/git/config" "$HOME/.claude/gitconfig.xdg"
+XDG_CONFIG_HOME="$HOME/elsewhere" "$ROOT_DIR/install.sh" >/dev/null
+grep -Fq "path = $HOME/elsewhere/git/config" "$HOME/.claude/gitconfig.xdg"
+
+# ...and the value actually resolves through the managed config.
+mkdir -p "$HOME/elsewhere/git"
+printf '[alias]\n\tzzz = status\n' > "$HOME/elsewhere/git/config"
+printf '[alias]\n\tyyy = log\n' > "$HOME/.gitconfig"
+mkdir -p "$HOME/repo" && git -C "$HOME/repo" init -q
+test "$(GIT_CONFIG_GLOBAL="$HOME/.claude/gitconfig" git -C "$HOME/repo" config --get alias.zzz)" = 'status'
+test "$(GIT_CONFIG_GLOBAL="$HOME/.claude/gitconfig" git -C "$HOME/repo" config --get alias.yyy)" = 'log'
+"$ROOT_DIR/install.sh" >/dev/null
+
 printf 'install tests passed\n'

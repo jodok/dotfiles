@@ -181,6 +181,13 @@ install_claude_git_identity() {
   chmod 700 "$HOME/.claude/bin/claude-ssh-agent" "$HOME/.claude/bin/claude-ssh-sign"
   chmod 600 "$HOME/.claude/gitconfig" "$HOME/.claude/ssh_config"
 
+  # See the comment in claude/gitconfig: GIT_CONFIG_GLOBAL replaces git's XDG global
+  # file too, so the managed config has to name whichever path is in effect here. A
+  # separate file rather than a line in gitconfig itself, which install_managed_file
+  # rewrites from the repo copy on every run.
+  printf '[include]\n\tpath = %s\n' "${XDG_CONFIG_HOME:-$HOME/.config}/git/config" \
+    > "$HOME/.claude/gitconfig.xdg"
+
   if ! command -v op >/dev/null 2>&1 || ! op whoami >/dev/null 2>&1; then
     log "1Password CLI unavailable or signed out; skipping the signing key (run install again once 'op signin' works)"
     return
