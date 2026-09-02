@@ -539,4 +539,30 @@ grep -Fq 'VAULT="Work"' "$HOME/.claude/bin/claude-ssh-agent"
 CLAUDE_OP_VAULT=Private "$ROOT_DIR/install.sh" >/dev/null
 grep -Fq 'VAULT="Private"' "$HOME/.claude/bin/claude-ssh-agent"
 
+# A vault named by a person -- apostrophes, ampersands, accents -- must be preserved
+# like any other; an allowlist of safe characters would downgrade it to Private on every
+# plain run, which is a silent switch to the wrong keys.
+CLAUDE_OP_VAULT="Jodok's Priv&t Tresor" "$ROOT_DIR/install.sh" >/dev/null
+grep -Fq "VAULT=\"Jodok's Priv&t Tresor\"" "$HOME/.claude/bin/claude-ssh-agent"
+"$ROOT_DIR/install.sh" >/dev/null
+grep -Fq "VAULT=\"Jodok's Priv&t Tresor\"" "$HOME/.claude/bin/claude-ssh-agent"
+CLAUDE_OP_VAULT=Private "$ROOT_DIR/install.sh" >/dev/null
+
+# A loader from before the vault was baked must be corrected, not preserved: reading
+# its VAULT line literally yields ${CLAUDE_OP_VAULT:-Private}, which substituted back in
+# reproduces the file byte for byte, so the machine would stay on the runtime-read form
+# and no later install could fix it.
+python3 - "$HOME/.claude/bin/claude-ssh-agent" <<'PYEOF'
+import re, sys
+p = sys.argv[1]
+s = open(p).read()
+open(p, "w").write(re.sub(r'^VAULT=.*$', 'VAULT="${CLAUDE_OP_VAULT:-Private}"', s, count=1, flags=re.M))
+PYEOF
+grep -Fq 'VAULT="${CLAUDE_OP_VAULT:-Private}"' "$HOME/.claude/bin/claude-ssh-agent"
+"$ROOT_DIR/install.sh" >/dev/null
+grep -Fq 'VAULT="Private"' "$HOME/.claude/bin/claude-ssh-agent"
+if grep -v '^[[:space:]]*#' "$HOME/.claude/bin/claude-ssh-agent" | grep -Fq 'CLAUDE_OP_VAULT'; then
+  echo "a legacy loader was preserved instead of corrected" >&2; exit 1
+fi
+
 printf 'install tests passed\n'

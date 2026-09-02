@@ -164,8 +164,15 @@ install_managed_file() {
     # directory.
     local op_dir="/usr/bin"
     if command -v op >/dev/null 2>&1; then op_dir="$(dirname "$(command -v op)")"; fi
-    sed "/^[[:space:]]*#/!{s|~/|$HOME/|g; s|[\$]HOME/|$HOME/|g; s|@OP_DIR@|$op_dir|g; \
-      s|@OP_VAULT@|${CLAUDE_OP_VAULT:-Private}|g;}" "$tmp" > "$tmp.expanded"
+    # & is "the whole match" in a sed replacement and | is the delimiter, so a vault
+    # named "Priv&t" would substitute the placeholder text back into itself, and a home
+    # directory with either character would corrupt every path. Escape the replacements.
+    local home_r op_dir_r vault_r
+    home_r="$(printf '%s' "$HOME" | sed 's/[&|\\]/\\&/g')"
+    op_dir_r="$(printf '%s' "$op_dir" | sed 's/[&|\\]/\\&/g')"
+    vault_r="$(printf '%s' "${CLAUDE_OP_VAULT:-Private}" | sed 's/[&|\\]/\\&/g')"
+    sed "/^[[:space:]]*#/!{s|~/|$home_r/|g; s|[\$]HOME/|$home_r/|g; s|@OP_DIR@|$op_dir_r|g; \
+      s|@OP_VAULT@|$vault_r|g;}" "$tmp" > "$tmp.expanded"
     mv "$tmp.expanded" "$tmp"
   fi
   if [ -f "$target" ] && ! cmp -s "$tmp" "$target"; then
@@ -203,8 +210,15 @@ install_claude_git_identity() {
   if [ -z "${CLAUDE_OP_VAULT:-}" ] && [ -f "$HOME/.claude/bin/claude-ssh-agent" ]; then
     local baked
     baked="$(sed -n 's/^VAULT="\(.*\)"$/\1/p' "$HOME/.claude/bin/claude-ssh-agent" | head -1)"
+    # Reject what cannot be a vault name rather than allowlisting what can: a real vault
+    # is named by a person and may carry an apostrophe, an ampersand or non-ASCII, and
+    # an allowlist would silently downgrade those to Private on every plain run. What is
+    # rejected is a loader from before the vault was baked, which reads
+    # VAULT="${CLAUDE_OP_VAULT:-Private}" -- taken literally as the name it substitutes
+    # straight back in, so the file never changes and no later install can correct it --
+    # the unsubstituted placeholder, and anything that would not survive the sed.
     case "$baked" in
-      ""|*@*) ;;
+      ""|*'$'*|*'{'*|*'}'*|*'"'*|*'\'*|*'|'*|*@*) ;;
       *) CLAUDE_OP_VAULT="$baked" ;;
     esac
   fi
