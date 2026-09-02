@@ -465,7 +465,7 @@ test "$(GIT_CONFIG_GLOBAL="$HOME/.claude/gitconfig" git -C "$HOME/repo" config -
 # An https remote must not slip past the identity: core.sshCommand governs the ssh
 # transport only, so without a rewrite git would fall back to the credential helpers
 # inherited from the personal config and push as the human account.
-test "$(GIT_CONFIG_GLOBAL="$HOME/.claude/gitconfig" git -C "$HOME/repo" config --get url.git@github.com:.insteadOf)" = 'https://github.com/'
+GIT_CONFIG_GLOBAL="$HOME/.claude/gitconfig" git -C "$HOME/repo" config --get-all url.git@github.com:.insteadOf | grep -Fxq 'https://github.com/'
 git -C "$HOME/repo" remote add origin https://github.com/jodok/dotfiles.git 2>/dev/null || true
 test "$(GIT_CONFIG_GLOBAL="$HOME/.claude/gitconfig" git -C "$HOME/repo" remote get-url origin)" = 'git@github.com:jodok/dotfiles.git'
 
@@ -507,5 +507,14 @@ test -z "$(GIT_CONFIG_GLOBAL="$HOME/.claude/gitconfig" git -C "$HOME/repo" confi
 # ...while other hosts keep the helpers inherited from the personal config.
 printf '[credential]\n\thelper = osxkeychain\n' >> "$HOME/.gitconfig"
 test "$(GIT_CONFIG_GLOBAL="$HOME/.claude/gitconfig" git -C "$HOME/repo" config --get-urlmatch credential.helper https://gitlab.com/org/repo)" = 'osxkeychain'
+# An empty helper list still leaves askpass and the terminal, either of which could hand
+# over a personal token; a credential git cannot get from a helper must not be obtained.
+test "$(GIT_CONFIG_GLOBAL="$HOME/.claude/gitconfig" git -C "$HOME/repo" config --get core.askPass)" = '/usr/bin/false'
+# The spellings that can be enumerated are rewritten outright.
+for u in 'https://github.com/o/r.git' 'https://jodok@github.com/o/r.git' 'http://github.com/o/r.git' 'git://github.com/o/r.git'; do
+  git -C "$HOME/repo" remote remove probe 2>/dev/null || true
+  git -C "$HOME/repo" remote add probe "$u"
+  test "$(GIT_CONFIG_GLOBAL="$HOME/.claude/gitconfig" git -C "$HOME/repo" remote get-url probe)" = 'git@github.com:o/r.git'
+done
 
 printf 'install tests passed\n'

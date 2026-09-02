@@ -50,16 +50,26 @@
 # succeeding as Jodok.
 [url "git@github.com:"]
 	insteadOf = https://github.com/
+	insteadOf = https://jodok@github.com/
+	insteadOf = http://github.com/
+	insteadOf = git://github.com/
 
-# insteadOf matches a literal prefix, so it cannot cover every valid spelling --
-# https://jodok@github.com/... slips past it. Clearing the helper list for GitHub means
-# any https form that survives the rewrite has no inherited credentials to push with and
-# fails, rather than authenticating as the human. Scoped to GitHub, so helpers for every
-# other host still come through the include.
+# insteadOf matches a literal prefix, so the list above cannot be exhaustive -- any
+# other userinfo spelling would slip past it. Clearing the helper list for GitHub takes
+# the inherited credentials away from whatever survives; scoped to GitHub, so helpers
+# for every other host still come through the include.
 [credential "https://github.com"]
 	helper =
 
 [core]
+	# An empty helper list is not the same as failing closed: with no helper, git falls
+	# back to core.askPass, SSH_ASKPASS or a terminal prompt, and an inherited askpass
+	# could still hand over a personal token. Pointing it at false means a credential
+	# git cannot get from a helper is not obtained at all -- which for an unattended
+	# agent session is the only useful answer anyway, since there is nobody to prompt.
+	# GIT_ASKPASS in the environment still outranks this; see the settings-precedence
+	# note in the global rules.
+	askPass = /usr/bin/false
 	# Pushes authenticate with claude-auth from the same agent. The separate ssh
 	# config exists because ~/.ssh/config may pin github.com to the 1Password agent
 	# with `IdentitiesOnly yes`, which would never offer this key.
