@@ -68,7 +68,20 @@ if holds_expected_keys; then
 fi
 
 command -v op >/dev/null 2>&1 || { echo "claude-ssh-agent: the 1Password CLI (op) is required" >&2; exit 1; }
-op whoami >/dev/null 2>&1 || { echo "claude-ssh-agent: op is not signed in — run 'op signin' first" >&2; exit 1; }
+
+# A session may carry OP_SERVICE_ACCOUNT_TOKEN, and op prefers it over the personal
+# login. A 1Password service account cannot be granted access to a PERSONAL vault, so
+# with the token set these keys become unreadable however well the token works for
+# everything else -- and `op whoami` still succeeds, so the guard above cannot catch it.
+# Read with whatever the environment provides, then retry without the token.
+op_read() {
+  op read "$1" 2>/dev/null && return 0
+  [ -n "${OP_SERVICE_ACCOUNT_TOKEN:-}" ] || return 1
+  env -u OP_SERVICE_ACCOUNT_TOKEN op read "$1" 2>/dev/null
+}
+
+op_read "$SIGNING" >/dev/null 2>&1 ||
+  { echo "claude-ssh-agent: cannot read $SIGNING — is op signed in, and does that identity have the vault?" >&2; exit 1; }
 
 mkdir -p "$(dirname "$SOCK")"
 chmod 700 "$(dirname "$SOCK")"
@@ -78,7 +91,7 @@ ssh-agent -a "$SOCK" >/dev/null
 # `op read` emits no trailing newline and ssh-add needs one; the default field is
 # PKCS#8, which ssh-add rejects, hence ssh-format=openssh above.
 for item in "$SIGNING" "$AUTH"; do
-  printf '%s\n' "$(op read "$item")" | SSH_AUTH_SOCK="$SOCK" ssh-add - >/dev/null 2>&1 ||
+  printf '%s\n' "$(op_read "$item")" | SSH_AUTH_SOCK="$SOCK" ssh-add - >/dev/null 2>&1 ||
     { echo "claude-ssh-agent: could not load $item" >&2; exit 1; }
 done
 echo "claude-ssh-agent: loaded $(SSH_AUTH_SOCK="$SOCK" ssh-add -l | wc -l | tr -d ' ') keys into $SOCK"

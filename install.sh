@@ -237,6 +237,15 @@ install_claude_git_identity() {
   printf '[include]\n\tpath = %s\n' "${XDG_CONFIG_HOME:-$HOME/.config}/git/config" \
     > "$HOME/.claude/gitconfig.xdg"
 
+  # Same fallback as the loader: a service-account token in the environment wins over the
+  # personal login, and a service account cannot reach a personal vault, so the reads
+  # below would fail while `op whoami` reported success.
+  op_read() {
+    op read "$1" 2>/dev/null && return 0
+    [ -n "${OP_SERVICE_ACCOUNT_TOKEN:-}" ] || return 1
+    env -u OP_SERVICE_ACCOUNT_TOKEN op read "$1" 2>/dev/null
+  }
+
   if ! command -v op >/dev/null 2>&1 || ! op whoami >/dev/null 2>&1; then
     log "1Password CLI unavailable or signed out; skipping the signing key (run install again once 'op signin' works)"
     return
@@ -250,8 +259,8 @@ install_claude_git_identity() {
   # files exist. After a rotation the loader would hold the new private auth key while
   # ssh stayed pinned to the old public one, and every push would fail.
   local pub authpub
-  pub="$(op read "op://$vault/claude-signing/public key" 2>/dev/null || true)"
-  authpub="$(op read "op://$vault/claude-auth/public key" 2>/dev/null || true)"
+  pub="$(op_read "op://$vault/claude-signing/public key" || true)"
+  authpub="$(op_read "op://$vault/claude-auth/public key" || true)"
   if [ -z "$pub" ] || [ -z "$authpub" ]; then
     log "could not read both claude-signing and claude-auth from the $vault vault; leaving the installed keys alone"
     return
