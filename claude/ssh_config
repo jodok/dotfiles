@@ -1,32 +1,31 @@
 # SSH config for the agent identity's git remotes, reached via core.sshCommand in
 # ~/.claude/gitconfig. Nothing else uses it — plain `ssh` is untouched.
 #
-# Pinning the agent for EVERY host is what makes this fail closed. Scoping the
-# override to `Host github.com` protected only a remote spelled literally that way:
-# an alias in ~/.ssh/config with `HostName github.com` is a different `Host` pattern,
-# so it imported the personal identity and the personal 1Password agent, and pushed
-# as the human account — silently, with the agent's separately revocable identity
-# bypassed and the human's broader permissions in play. It cannot be repaired after
-# the fact either: an option keeps the first value it is given, and `Match final`
-# re-parses without clearing what the include already set, so nothing placed after
-# the include can take the personal agent back off. The only ordering that holds is
-# claiming the agent before the include is ever read.
+# It deliberately does NOT include ~/.ssh/config. Two attempts at including it safely
+# both failed closed only by luck. Scoping the override to `Host github.com` protected
+# a remote spelled literally that way and nothing else: an alias with
+# `HostName github.com` is a different Host pattern, so it imported the personal
+# identity and pushed as the human account. Pinning IdentityAgent for every host took
+# the personal AGENT away, but not personal keys — `IdentityAgent` only chooses the
+# socket, and `IdentitiesOnly yes` still permits an explicitly configured file
+# identity, so an alias pointing at a private key on disk would still have
+# authenticated as the human. Nor can it be repaired afterwards: an ssh option keeps
+# the first value it is given, and `Match final` re-parses without clearing what the
+# include already set, so nothing placed after the include can take an identity back
+# off. There is no way to include routing while excluding identities, so the include
+# is gone and the identity below is the only one this config can ever offer.
 #
-# What survives from ~/.ssh/config is everything that is not an identity — HostName,
-# User, Port, ProxyJump — so a remote elsewhere still resolves and tunnels correctly.
-# What it no longer gets is the human's keys: a git remote that needs one now fails
-# with a permission error, which is the loud half of the trade and the right one.
-Host *
-	IdentityAgent ~/.claude/run/agent.sock
-
+# The cost is that an ssh alias in ~/.ssh/config means nothing here: a git remote that
+# relies on one for HostName, Port or ProxyJump does not resolve. That is a loud
+# failure, and the fix is to add its Host block to THIS file — which is also the
+# moment to decide whether an agent should reach that host at all. Nothing is lost
+# that would have worked anyway: with the personal keys unreachable, such a remote
+# could not have authenticated regardless.
 Host github.com
 	HostName github.com
 	User git
+
+Host *
+	IdentityAgent ~/.claude/run/agent.sock
 	IdentityFile ~/.claude/claude-auth.pub
 	IdentitiesOnly yes
-
-# `Match !host` rather than a bare Include: an Include written at the end of a `Host`
-# block is CONDITIONAL on that block, which would leave every non-github remote with
-# no ~/.ssh/config at all — no ProxyJump, no User, no Port.
-Match !host github.com
-Include ~/.ssh/config

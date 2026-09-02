@@ -234,42 +234,60 @@ test -f "$HOME/.claude/claude-signing.pub"
 test ! -e "$HOME/.claude/claude-auth.pub"
 test ! -e "$HOME/.claude/settings.json"
 
-# The github.com block must be self-contained and the personal config must still
-# reach every other host. Both are easy to get wrong in the same file: an Include at
-# the end of a `Host` block is conditional on it, and an included `Host github.com`
-# block would append a personal IdentityFile that `IdentitiesOnly yes` does not
-# exclude -- a silent fallback to the very identity this one is separate from.
+# The config must not inherit personal identities for ANY host: an alias whose
+# HostName is github.com is a different Host pattern, and IdentitiesOnly does not
+# exclude an explicitly configured file identity, so an included personal key would
+# have been usable and would have pushed as the human account.
 mkdir -p "$HOME/.ssh"
 cat > "$HOME/.ssh/config" <<'EOF'
-Host github.com
-	IdentityFile ~/.ssh/personal_github.pub
 Host gh-work
 	HostName github.com
-	IdentityFile ~/.ssh/personal_github.pub
+	IdentityFile ~/.ssh/personal_github
 Host somehost
 	User personaluser
 Host *
 	IdentityAgent ~/Library/onepassword.sock
 EOF
-gh_ids="$(ssh -F "$HOME/.claude/ssh_config" -G github.com </dev/null 2>/dev/null | grep -c '^identityfile ')"
-test "$gh_ids" = 1
-ssh -F "$HOME/.claude/ssh_config" -G github.com </dev/null 2>/dev/null | grep -Fq 'identityfile ~/.claude/claude-auth.pub'
-# Without this the agent's other key -- the signing one -- is offered to GitHub too.
-test "$(ssh -F "$HOME/.claude/ssh_config" -G github.com </dev/null 2>/dev/null | awk '$1=="identitiesonly"{print $2}')" = 'yes'
-test "$(ssh -F "$HOME/.claude/ssh_config" -G somehost </dev/null 2>/dev/null | awk '$1=="user"{print $2}')" = 'personaluser'
-
-# An alias whose HostName is github.com is a different Host pattern, so it imports the
-# personal config -- including the personal agent, which is where the human's keys
-# live. Every host must resolve to our agent, or such a remote pushes as the human.
-# ssh expands `~` from the passwd entry rather than $HOME, so the path cannot be
-# built from the fake home here; anchor on the value github.com resolves to instead.
 agent_sock="$(ssh -F "$HOME/.claude/ssh_config" -G github.com </dev/null 2>/dev/null | awk '$1=="identityagent"{print $2}')"
 case "$agent_sock" in */.claude/run/agent.sock) ;; *) echo "unexpected agent socket: $agent_sock" >&2; exit 1 ;; esac
-for h in gh-work somehost; do
-  test "$(ssh -F "$HOME/.claude/ssh_config" -G "$h" </dev/null 2>/dev/null | awk '$1=="identityagent"{print $2}')" = "$agent_sock"
+for h in github.com gh-work somehost; do
+  ids="$(ssh -F "$HOME/.claude/ssh_config" -G "$h" </dev/null 2>/dev/null)"
+  # Exactly one identity, ours, from our agent -- no personal key, no personal agent.
+  test "$(printf '%s\n' "$ids" | grep -c '^identityfile ')" = 1
+  printf '%s\n' "$ids" | grep -Fq 'identityfile ~/.claude/claude-auth.pub'
+  test "$(printf '%s\n' "$ids" | awk '$1=="identityagent"{print $2}')" = "$agent_sock"
+  test "$(printf '%s\n' "$ids" | awk '$1=="identitiesonly"{print $2}')" = 'yes'
+  # And nothing is inherited from the personal config at all.
+  if printf '%s\n' "$ids" | grep -Fq 'onepassword.sock'; then echo "inherited the personal agent for $h" >&2; exit 1; fi
+  if printf '%s\n' "$ids" | grep -Fq 'personal_github'; then echo "inherited a personal key for $h" >&2; exit 1; fi
 done
-# ...while the non-identity settings of the alias still come through.
-test "$(ssh -F "$HOME/.claude/ssh_config" -G gh-work </dev/null 2>/dev/null | awk '$1=="hostname"{print $2}')" = 'github.com'
+test "$(ssh -F "$HOME/.claude/ssh_config" -G somehost </dev/null 2>/dev/null | awk '$1=="user"{print $2}')" != 'personaluser'
+test "$(ssh -F "$HOME/.claude/ssh_config" -G github.com </dev/null 2>/dev/null | awk '$1=="user"{print $2}')" = 'git'
+
+# A rotated signing key must not leave the old one trusted forever -- if it was
+# rotated because it leaked, its holder could keep producing commits that verify
+# locally as jodok@batlogg.com. The user's own signers survive the rewrite.
+grep -Fq 'AAAAPERSONAL' "$HOME/.config/git/allowed_signers"
+printf 'someone@else.example ssh-ed25519 AAAAUNRELATED\n' >> "$HOME/.config/git/allowed_signers"
+cat > "$TEST_DIR/bin/op" <<'EOF'
+#!/usr/bin/env bash
+case "$1" in
+  whoami) exit 0 ;;
+  read)
+    case "$2" in
+      *claude-auth*) printf 'ssh-ed25519 AAAAAUTHKEY comment' ;;
+      *) printf 'ssh-ed25519 AAAAROTATED comment' ;;
+    esac
+    ;;
+  *) exit 1 ;;
+esac
+EOF
+chmod +x "$TEST_DIR/bin/op"
+"$ROOT_DIR/install.sh" >/dev/null
+grep -Fq 'AAAAROTATED' "$HOME/.config/git/allowed_signers"
+test "$(grep -Fc 'AAAATESTKEY' "$HOME/.config/git/allowed_signers")" = 0
+grep -Fq 'AAAAPERSONAL' "$HOME/.config/git/allowed_signers"
+grep -Fq 'AAAAUNRELATED' "$HOME/.config/git/allowed_signers"
 
 # Both keys again -- the block above deliberately left the identity incomplete, and
 # with it incomplete the settings merge does not run at all, which would make every

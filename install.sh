@@ -212,10 +212,34 @@ install_claude_git_identity() {
   line="jodok@batlogg.com $(printf '%s' "$pub" | awk '{print $1" "$2}')"
   mkdir -p "$(dirname "$signers")"
   touch "$signers"
-  if ! grep -qF "$line" "$signers"; then
+  # Retire the key this installer put there last time. Appending alone would leave a
+  # rotated-out key trusted forever, so a key rotated BECAUSE it leaked would keep
+  # producing commits that verify locally as jodok@batlogg.com -- which is most of
+  # what rotating it was for. Only the exact line we recorded writing is removed, so
+  # the user's own signers, and anything they added by hand, are untouched.
+  local managed="$HOME/.claude/allowed_signers.installed"
+  if [ -f "$managed" ]; then
+    local prev
+    prev="$(cat "$managed")"
+    if [ -n "$prev" ] && [ "$prev" != "$line" ]; then
+      local rc=0
+      grep -vxF "$prev" "$signers" > "$signers.tmp" || rc=$?
+      # 1 is "no lines left", which is a legitimate result here; 2 and up are errors,
+      # and dropping the file on one of those would delete the user's own signers.
+      if [ "$rc" -le 1 ]; then
+        mv "$signers.tmp" "$signers"
+        log "retired the previous claude-signing key from $signers"
+      else
+        rm -f "$signers.tmp"
+        log "could not rewrite $signers; the previous claude-signing key is still trusted"
+      fi
+    fi
+  fi
+  if ! grep -qxF "$line" "$signers"; then
     printf '%s\n' "$line" >> "$signers"
     log "added claude-signing to $signers"
   fi
+  printf '%s\n' "$line" > "$managed"
   log "installed the agent git identity"
 }
 

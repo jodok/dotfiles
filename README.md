@@ -25,9 +25,10 @@ The installer is idempotent and will:
   `~/.claude/`, the git identity coding agents commit and push with
 - write `~/.claude/claude-signing.pub` and `~/.claude/claude-auth.pub` from the
   matching items in 1Password — the agent loader compares what it holds against
-  these, so a rotated key is noticed without calling 1Password every session, and add that key to `~/.config/git/allowed_signers` if it is not
-  already listed — **appended, never rewritten**, since that file is yours and
-  usually carries your own signing keys. Skipped with a note when the 1Password
+  these, so a rotated key is noticed without calling 1Password every session, and add
+  that key to `~/.config/git/allowed_signers` if it is not already listed. Your own
+  signers are never touched: only the exact line a previous install recorded writing
+  is retired, so a rotated key stops being trusted instead of staying valid forever. Skipped with a note when the 1Password
   CLI is missing or signed out; no private key is ever written to disk
 - merge two keys into `~/.claude/settings.json` — **only once a signing key
   exists**, since the config it selects sets `commit.gpgsign` and activating it
@@ -87,7 +88,8 @@ claude/                # installed to ~/.claude/
   gitconfig            # the identity agents commit and push with (managed: do not
                        #   `git config --global` into it; put durable settings in
                        #   ~/.gitconfig, which it includes)
-  ssh_config           # github.com via the agent's own ssh-agent
+  ssh_config           # every git remote via the agent's own ssh-agent; does not
+                       #   include ~/.ssh/config, so ssh aliases do not apply
   bin/claude-ssh-agent # loads the keys from 1Password into a plain ssh-agent
   bin/claude-ssh-sign  # pins SSH_AUTH_SOCK for ssh-keygen when git signs
 ```

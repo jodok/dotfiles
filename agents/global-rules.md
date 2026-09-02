@@ -37,9 +37,11 @@ repository's `AGENTS.md`.
   - Four things this rests on, each of which cost a debugging round. `op read`
     must use `?ssh-format=openssh`, because the default field is PKCS#8 and
     `ssh-add` rejects it, and the output needs a trailing newline appended.
-    `~/.ssh/config` pins github.com to the 1Password agent with
-    `IdentitiesOnly yes`, so an agent-held key it does not list is never
-    offered — hence git's own `~/.claude/ssh_config`. Signing runs `ssh-keygen`,
+    `~/.claude/ssh_config` is git's own and deliberately does not include
+    `~/.ssh/config`: including it let an ssh alias whose `HostName` is
+    `github.com` supply a personal key and push as the human account, and there
+    is no way to inherit routing without inheriting identities. So an ssh alias
+    means nothing to agent git — add the host block to that file instead. Signing runs `ssh-keygen`,
     which takes its agent from `SSH_AUTH_SOCK` and not from `core.sshCommand`,
     so `gpg.ssh.program` points at a shim that pins the socket; without it
     commits fail with `Couldn't find key in agent?`. And `gpg.ssh.allowedSignersFile`
