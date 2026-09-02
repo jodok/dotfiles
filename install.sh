@@ -170,7 +170,7 @@ install_managed_file() {
     local home_r op_dir_r vault_r
     home_r="$(printf '%s' "$HOME" | sed 's/[&|\\]/\\&/g')"
     op_dir_r="$(printf '%s' "$op_dir" | sed 's/[&|\\]/\\&/g')"
-    vault_r="$(printf '%s' "${CLAUDE_OP_VAULT:-Private}" | sed 's/[&|\\]/\\&/g')"
+    vault_r="$(printf '%s' "${CLAUDE_OP_VAULT:-infra-hosts}" | sed 's/[&|\\]/\\&/g')"
     sed "/^[[:space:]]*#/!{s|~/|$home_r/|g; s|[\$]HOME/|$home_r/|g; s|@OP_DIR@|$op_dir_r|g; \
       s|@OP_VAULT@|$vault_r|g;}" "$tmp" > "$tmp.expanded"
     mv "$tmp.expanded" "$tmp"
@@ -251,7 +251,7 @@ install_claude_git_identity() {
     return
   fi
 
-  local vault="${CLAUDE_OP_VAULT:-Private}"
+  local vault="${CLAUDE_OP_VAULT:-infra-hosts}"
   # Both halves are read before either is written, so the pair on disk always comes
   # from one run. Writing the signing key and then failing on the auth key left a
   # mixed generation behind -- new signing key, previous auth key -- which survives as

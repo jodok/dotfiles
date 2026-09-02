@@ -75,6 +75,17 @@ chmod +x "$TEST_DIR/bin/curl"
 export DOTFILES_TEST_ROOT="$ROOT_DIR"
 export HOME="$TEST_DIR/home"
 export PATH="$TEST_DIR/bin:$PATH"
+
+# A refusing `op` from the very first line, before any install runs. Without it the
+# early installs reach whatever `op` the machine has, and on a box where 1Password is
+# unlocked and the default vault is readable they pull real keys into this fake home --
+# so the suite passed only because the real vault happened to be unreachable. Tests must
+# never depend on that.
+cat > "$TEST_DIR/bin/op" <<'OPEOF'
+#!/usr/bin/env bash
+exit 1
+OPEOF
+chmod +x "$TEST_DIR/bin/op"
 export ZSH="$HOME/omz-alt"
 export ZSH_CUSTOM="$HOME/custom-alt"
 
@@ -520,8 +531,12 @@ done
 # The vault is baked at install time, not read at runtime: a repository can set the
 # environment for the hook, and a runtime read would also break the documented custom
 # vault workflow -- installing with CLAUDE_OP_VAULT=Work writes Work's public keys while
-# a later session without that variable would look in Private.
-grep -Fq 'VAULT="Private"' "$HOME/.claude/bin/claude-ssh-agent"
+# a later session without that variable would look at the default.
+#
+# The default is a SHARED vault. A 1Password service account cannot be granted a personal
+# vault, so a default of Private would mean the loader could only ever run during an
+# interactive unlock -- useless at session start on a machine that just booted.
+grep -Fq 'VAULT="infra-hosts"' "$HOME/.claude/bin/claude-ssh-agent"
 CLAUDE_OP_VAULT=Work "$ROOT_DIR/install.sh" >/dev/null
 grep -Fq 'VAULT="Work"' "$HOME/.claude/bin/claude-ssh-agent"
 if grep -Fq '@OP_VAULT@' "$HOME/.claude/bin/claude-ssh-agent"; then
@@ -535,9 +550,10 @@ fi
 # in place -- working until the agent socket goes away, then failing everything.
 "$ROOT_DIR/install.sh" >/dev/null
 grep -Fq 'VAULT="Work"' "$HOME/.claude/bin/claude-ssh-agent"
-# An explicit choice still wins.
-CLAUDE_OP_VAULT=Private "$ROOT_DIR/install.sh" >/dev/null
-grep -Fq 'VAULT="Private"' "$HOME/.claude/bin/claude-ssh-agent"
+# An explicit choice still wins -- named something other than the default, or it would
+# pass whether or not the choice was honoured.
+CLAUDE_OP_VAULT=Elsewhere "$ROOT_DIR/install.sh" >/dev/null
+grep -Fq 'VAULT="Elsewhere"' "$HOME/.claude/bin/claude-ssh-agent"
 
 # A vault named by a person -- apostrophes, ampersands, accents -- must be preserved
 # like any other; an allowlist of safe characters would downgrade it to Private on every
@@ -546,7 +562,7 @@ CLAUDE_OP_VAULT="Jodok's Priv&t Tresor" "$ROOT_DIR/install.sh" >/dev/null
 grep -Fq "VAULT=\"Jodok's Priv&t Tresor\"" "$HOME/.claude/bin/claude-ssh-agent"
 "$ROOT_DIR/install.sh" >/dev/null
 grep -Fq "VAULT=\"Jodok's Priv&t Tresor\"" "$HOME/.claude/bin/claude-ssh-agent"
-CLAUDE_OP_VAULT=Private "$ROOT_DIR/install.sh" >/dev/null
+CLAUDE_OP_VAULT=Elsewhere "$ROOT_DIR/install.sh" >/dev/null
 
 # A loader from before the vault was baked must be corrected, not preserved: reading
 # its VAULT line literally yields ${CLAUDE_OP_VAULT:-Private}, which substituted back in
@@ -560,7 +576,7 @@ open(p, "w").write(re.sub(r'^VAULT=.*$', 'VAULT="${CLAUDE_OP_VAULT:-Private}"', 
 PYEOF
 grep -Fq 'VAULT="${CLAUDE_OP_VAULT:-Private}"' "$HOME/.claude/bin/claude-ssh-agent"
 "$ROOT_DIR/install.sh" >/dev/null
-grep -Fq 'VAULT="Private"' "$HOME/.claude/bin/claude-ssh-agent"
+grep -Fq 'VAULT="infra-hosts"' "$HOME/.claude/bin/claude-ssh-agent"
 if grep -v '^[[:space:]]*#' "$HOME/.claude/bin/claude-ssh-agent" | grep -Fq 'CLAUDE_OP_VAULT'; then
   echo "a legacy loader was preserved instead of corrected" >&2; exit 1
 fi

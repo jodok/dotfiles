@@ -33,7 +33,15 @@ repository's `AGENTS.md`.
   agent, which prompts and fails intermittently. The identity is separate, so it
   can be revoked on GitHub without touching Jodok's own keys.
   - Re-run `~/.claude/bin/claude-ssh-agent` if the socket is missing; it is
-    idempotent and reloads only when a key is absent. It needs `op` signed in.
+    idempotent and reloads only when a key is absent.
+  - **The keys live in a shared vault, not `Private`, and that is load-bearing.** A
+    1Password service account cannot be granted access to a personal vault, so with the
+    keys in `Private` the loader could only ever run during an interactive unlock — which
+    is no use at session start on a machine that just booted. In a shared vault the
+    service-account token in `OP_SERVICE_ACCOUNT_TOKEN` loads them unattended. `op` still
+    prefers that token over the personal login for every call, so both the loader and the
+    installer retry each read with it stripped; without that, moving the keys back to a
+    personal vault would break them silently while `op whoami` kept reporting success.
   - Four things this rests on, each of which cost a debugging round. `op read`
     must use `?ssh-format=openssh`, because the default field is PKCS#8 and
     `ssh-add` rejects it, and the output needs a trailing newline appended.
