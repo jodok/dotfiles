@@ -396,4 +396,38 @@ chmod +x "$TEST_DIR/bin/op"
 test "$(grep -Fc 'AAAANEWSIGNING' "$HOME/.claude/claude-signing.pub")" = 0
 grep -Fq 'AAAAAUTHKEY' "$HOME/.claude/claude-auth.pub"
 
+# A retirement that fails must stay pending. Recording the new key anyway would make
+# the next run compare it against itself and never try again, so a key rotated because
+# it leaked would keep verifying forever.
+cat > "$TEST_DIR/bin/op" <<'EOF'
+#!/usr/bin/env bash
+case "$1" in
+  whoami) exit 0 ;;
+  read)
+    case "$2" in
+      *claude-auth*) printf 'ssh-ed25519 AAAAAUTHKEY comment' ;;
+      *) printf 'ssh-ed25519 AAAAGENONE comment' ;;
+    esac
+    ;;
+  *) exit 1 ;;
+esac
+EOF
+chmod +x "$TEST_DIR/bin/op"
+"$ROOT_DIR/install.sh" >/dev/null
+grep -Fq 'AAAAGENONE' "$HOME/.config/git/allowed_signers"
+
+# Rotate, with the signers directory read-only so the rewrite cannot happen.
+sed -i.bak 's/AAAAGENONE/AAAAGENTWO/' "$TEST_DIR/bin/op"
+chmod 500 "$HOME/.config/git"
+"$ROOT_DIR/install.sh" >/dev/null
+chmod 700 "$HOME/.config/git"
+grep -Fq 'AAAAGENONE' "$HOME/.config/git/allowed_signers"   # still trusted, as reported
+grep -Fq 'AAAAGENTWO' "$HOME/.config/git/allowed_signers"
+
+# The next run, with the directory writable again, must still retire it.
+"$ROOT_DIR/install.sh" >/dev/null
+test "$(grep -Fc 'AAAAGENONE' "$HOME/.config/git/allowed_signers")" = 0
+grep -Fq 'AAAAGENTWO' "$HOME/.config/git/allowed_signers"
+grep -Fq 'AAAAPERSONAL' "$HOME/.config/git/allowed_signers"
+
 printf 'install tests passed\n'

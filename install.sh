@@ -227,19 +227,24 @@ install_claude_git_identity() {
   # what rotating it was for. Only the exact line we recorded writing is removed, so
   # the user's own signers, and anything they added by hand, are untouched.
   local managed="$HOME/.claude/allowed_signers.installed"
+  local retired=1
   if [ -f "$managed" ]; then
     local prev
     prev="$(cat "$managed")"
     if [ -n "$prev" ] && [ "$prev" != "$line" ]; then
       local rc=0
-      grep -vxF "$prev" "$signers" > "$signers.tmp" || rc=$?
-      # 1 is "no lines left", which is a legitimate result here; 2 and up are errors,
-      # and dropping the file on one of those would delete the user's own signers.
-      if [ "$rc" -le 1 ]; then
+      # Braces so the shell's own redirection error is quiet too; the log line below
+      # says what happened in terms the reader can act on.
+      { grep -vxF "$prev" "$signers" > "$signers.tmp"; } 2>/dev/null || rc=$?
+      # 1 is "no lines left", a legitimate result here; 2 and up are errors, and so is
+      # a redirection that never produced the file -- an unwritable directory reports
+      # 1 with nothing written, and moving that would delete the user's own signers.
+      if [ "$rc" -le 1 ] && [ -f "$signers.tmp" ]; then
         mv "$signers.tmp" "$signers"
         log "retired the previous claude-signing key from $signers"
       else
         rm -f "$signers.tmp"
+        retired=0
         log "could not rewrite $signers; the previous claude-signing key is still trusted"
       fi
     fi
@@ -248,7 +253,14 @@ install_claude_git_identity() {
     printf '%s\n' "$line" >> "$signers"
     log "added claude-signing to $signers"
   fi
-  printf '%s\n' "$line" > "$managed"
+  # Only once the old line is actually gone. Recording the new one after a failed
+  # retirement would make the next run compare the new key against itself and never
+  # try again, leaving a key that was rotated *because* it leaked trusted forever.
+  if [ "$retired" -eq 1 ]; then
+    printf '%s\n' "$line" > "$managed"
+  else
+    log "will retry retiring the previous key on the next install"
+  fi
   log "installed the agent git identity"
 }
 
