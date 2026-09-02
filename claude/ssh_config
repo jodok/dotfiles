@@ -1,24 +1,32 @@
 # SSH config for the agent identity's git remotes, reached via core.sshCommand in
-# ~/.claude/gitconfig. Nothing else uses it.
+# ~/.claude/gitconfig. Nothing else uses it — plain `ssh` is untouched.
 #
-# github.com is served entirely from the block below and is deliberately excluded
-# from the Include. `IdentityFile` is additive and `IdentitiesOnly yes` does not help
-# -- a file appended by an included `Host github.com` block counts as configured, so
-# a personal key would be offered too, and would push as the human account the moment
-# claude-auth stopped answering first. An identity that is supposed to be separately
-# revocable cannot have a silent fallback to the identity it is separate from. The
-# cost is that a github-specific workaround in ~/.ssh/config (the ssh.github.com:443
-# port escape, say) does not apply here; add it to this block if you ever need it.
+# Pinning the agent for EVERY host is what makes this fail closed. Scoping the
+# override to `Host github.com` protected only a remote spelled literally that way:
+# an alias in ~/.ssh/config with `HostName github.com` is a different `Host` pattern,
+# so it imported the personal identity and the personal 1Password agent, and pushed
+# as the human account — silently, with the agent's separately revocable identity
+# bypassed and the human's broader permissions in play. It cannot be repaired after
+# the fact either: an option keeps the first value it is given, and `Match final`
+# re-parses without clearing what the include already set, so nothing placed after
+# the include can take the personal agent back off. The only ordering that holds is
+# claiming the agent before the include is ever read.
+#
+# What survives from ~/.ssh/config is everything that is not an identity — HostName,
+# User, Port, ProxyJump — so a remote elsewhere still resolves and tunnels correctly.
+# What it no longer gets is the human's keys: a git remote that needs one now fails
+# with a permission error, which is the loud half of the trade and the right one.
+Host *
+	IdentityAgent ~/.claude/run/agent.sock
+
 Host github.com
 	HostName github.com
 	User git
-	IdentityAgent ~/.claude/run/agent.sock
 	IdentityFile ~/.claude/claude-auth.pub
 	IdentitiesOnly yes
 
-# Every other host comes from the personal config unchanged. `Match !host` rather than
-# a bare Include: an Include at the end of a `Host` block is CONDITIONAL on that block,
-# so writing it there would leave every non-github remote with no ~/.ssh/config at all
-# -- no ProxyJump, no User, no IdentityFile.
+# `Match !host` rather than a bare Include: an Include written at the end of a `Host`
+# block is CONDITIONAL on that block, which would leave every non-github remote with
+# no ~/.ssh/config at all — no ProxyJump, no User, no Port.
 Match !host github.com
 Include ~/.ssh/config

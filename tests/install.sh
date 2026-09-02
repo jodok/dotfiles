@@ -243,13 +243,33 @@ mkdir -p "$HOME/.ssh"
 cat > "$HOME/.ssh/config" <<'EOF'
 Host github.com
 	IdentityFile ~/.ssh/personal_github.pub
+Host gh-work
+	HostName github.com
+	IdentityFile ~/.ssh/personal_github.pub
 Host somehost
 	User personaluser
+Host *
+	IdentityAgent ~/Library/onepassword.sock
 EOF
 gh_ids="$(ssh -F "$HOME/.claude/ssh_config" -G github.com </dev/null 2>/dev/null | grep -c '^identityfile ')"
 test "$gh_ids" = 1
 ssh -F "$HOME/.claude/ssh_config" -G github.com </dev/null 2>/dev/null | grep -Fq 'identityfile ~/.claude/claude-auth.pub'
+# Without this the agent's other key -- the signing one -- is offered to GitHub too.
+test "$(ssh -F "$HOME/.claude/ssh_config" -G github.com </dev/null 2>/dev/null | awk '$1=="identitiesonly"{print $2}')" = 'yes'
 test "$(ssh -F "$HOME/.claude/ssh_config" -G somehost </dev/null 2>/dev/null | awk '$1=="user"{print $2}')" = 'personaluser'
+
+# An alias whose HostName is github.com is a different Host pattern, so it imports the
+# personal config -- including the personal agent, which is where the human's keys
+# live. Every host must resolve to our agent, or such a remote pushes as the human.
+# ssh expands `~` from the passwd entry rather than $HOME, so the path cannot be
+# built from the fake home here; anchor on the value github.com resolves to instead.
+agent_sock="$(ssh -F "$HOME/.claude/ssh_config" -G github.com </dev/null 2>/dev/null | awk '$1=="identityagent"{print $2}')"
+case "$agent_sock" in */.claude/run/agent.sock) ;; *) echo "unexpected agent socket: $agent_sock" >&2; exit 1 ;; esac
+for h in gh-work somehost; do
+  test "$(ssh -F "$HOME/.claude/ssh_config" -G "$h" </dev/null 2>/dev/null | awk '$1=="identityagent"{print $2}')" = "$agent_sock"
+done
+# ...while the non-identity settings of the alias still come through.
+test "$(ssh -F "$HOME/.claude/ssh_config" -G gh-work </dev/null 2>/dev/null | awk '$1=="hostname"{print $2}')" = 'github.com'
 
 # Both keys again -- the block above deliberately left the identity incomplete, and
 # with it incomplete the settings merge does not run at all, which would make every
