@@ -517,4 +517,20 @@ for u in 'https://github.com/o/r.git' 'https://jodok@github.com/o/r.git' 'http:/
   test "$(GIT_CONFIG_GLOBAL="$HOME/.claude/gitconfig" git -C "$HOME/repo" remote get-url probe)" = 'git@github.com:o/r.git'
 done
 
+# The vault is baked at install time, not read at runtime: a repository can set the
+# environment for the hook, and a runtime read would also break the documented custom
+# vault workflow -- installing with CLAUDE_OP_VAULT=Work writes Work's public keys while
+# a later session without that variable would look in Private.
+grep -Fq 'VAULT="Private"' "$HOME/.claude/bin/claude-ssh-agent"
+CLAUDE_OP_VAULT=Work "$ROOT_DIR/install.sh" >/dev/null
+grep -Fq 'VAULT="Work"' "$HOME/.claude/bin/claude-ssh-agent"
+if grep -Fq '@OP_VAULT@' "$HOME/.claude/bin/claude-ssh-agent"; then
+  echo "vault placeholder was never substituted" >&2; exit 1
+fi
+if grep -v '^[[:space:]]*#' "$HOME/.claude/bin/claude-ssh-agent" | grep -Fq 'CLAUDE_OP_VAULT'; then
+  echo "loader still reads the vault from its environment" >&2; exit 1
+fi
+"$ROOT_DIR/install.sh" >/dev/null
+grep -Fq 'VAULT="Private"' "$HOME/.claude/bin/claude-ssh-agent"
+
 printf 'install tests passed\n'

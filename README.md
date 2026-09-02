@@ -96,7 +96,8 @@ claude/                # installed to ~/.claude/
 
 `CLAUDE_JSON_TOOL` picks which tool merges `settings.json` — `auto` (default,
 prefers `jq`), `jq`, or `python3`. `CLAUDE_OP_VAULT` names the 1Password vault
-(default `Private`).
+(default `Private`) — it is baked into the installed loader, so re-run the installer to
+change it rather than exporting it in a session.
 
 ```
 ~/.claude/CLAUDE.md    # imports ~/.agents/global-rules.md

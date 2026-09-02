@@ -32,7 +32,13 @@ if [ -e "$SOCK" ] && [ ! -S "$SOCK" ]; then
   exit 1
 fi
 
-VAULT="${CLAUDE_OP_VAULT:-Private}"
+# Substituted by install.sh, not read at runtime. A repository can set the environment
+# for the hook this runs from, and would otherwise redirect these op read calls at
+# identically named items in another vault it can reach -- whose keys then sit in the
+# agent at a socket path it knows. It also has to be baked to work at all: installing
+# with CLAUDE_OP_VAULT=Work writes Work's public keys, and a later session without that
+# variable exported would look in Private and fail every commit and push.
+VAULT="@OP_VAULT@"
 # By title, not by item id: readable, and it survives an item being recreated.
 SIGNING="op://$VAULT/claude-signing/private key?ssh-format=openssh"
 AUTH="op://$VAULT/claude-auth/private key?ssh-format=openssh"

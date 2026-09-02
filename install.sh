@@ -164,8 +164,8 @@ install_managed_file() {
     # directory.
     local op_dir="/usr/bin"
     if command -v op >/dev/null 2>&1; then op_dir="$(dirname "$(command -v op)")"; fi
-    sed "/^[[:space:]]*#/!{s|~/|$HOME/|g; s|[\$]HOME/|$HOME/|g; s|@OP_DIR@|$op_dir|g;}" \
-      "$tmp" > "$tmp.expanded"
+    sed "/^[[:space:]]*#/!{s|~/|$HOME/|g; s|[\$]HOME/|$HOME/|g; s|@OP_DIR@|$op_dir|g; \
+      s|@OP_VAULT@|${CLAUDE_OP_VAULT:-Private}|g;}" "$tmp" > "$tmp.expanded"
     mv "$tmp.expanded" "$tmp"
   fi
   if [ -f "$target" ] && ! cmp -s "$tmp" "$target"; then
