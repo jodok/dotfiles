@@ -156,7 +156,10 @@ install_managed_file() {
     --max-time "$CURL_MAX_TIME" "$url" -o "$tmp"
   if [ -n "$expand" ]; then
     # Comments keep their ~ so the installed file still reads as documentation.
-    sed "/^[[:space:]]*#/!s|~/|$HOME/|g" "$tmp" > "$tmp.expanded"
+    # $HOME too, not only ~: the shell scripts spell it that way, and a loader that
+    # reads HOME at runtime would build a repository-relative socket while ssh_content
+    # kept the install-time one, so signing and pushing would look in different places.
+    sed "/^[[:space:]]*#/!{s|~/|$HOME/|g; s|[\$]HOME/|$HOME/|g;}" "$tmp" > "$tmp.expanded"
     mv "$tmp.expanded" "$tmp"
   fi
   if [ -f "$target" ] && ! cmp -s "$tmp" "$target"; then
@@ -188,8 +191,8 @@ backup_file() {
 install_claude_git_identity() {
   install_managed_file "$CLAUDE_GITCONFIG_URL" "$HOME/.claude/gitconfig" expand
   install_managed_file "$CLAUDE_SSH_CONFIG_URL" "$HOME/.claude/ssh_config" expand
-  install_managed_file "$CLAUDE_SSH_AGENT_URL" "$HOME/.claude/bin/claude-ssh-agent"
-  install_managed_file "$CLAUDE_SSH_SIGN_URL" "$HOME/.claude/bin/claude-ssh-sign"
+  install_managed_file "$CLAUDE_SSH_AGENT_URL" "$HOME/.claude/bin/claude-ssh-agent" expand
+  install_managed_file "$CLAUDE_SSH_SIGN_URL" "$HOME/.claude/bin/claude-ssh-sign" expand
   chmod 700 "$HOME/.claude/bin/claude-ssh-agent" "$HOME/.claude/bin/claude-ssh-sign"
   chmod 600 "$HOME/.claude/gitconfig" "$HOME/.claude/ssh_config"
 
@@ -303,6 +306,13 @@ install_claude_settings() {
   # would otherwise point this hook at its own .claude/bin/claude-ssh-agent, which the
   # session then runs at startup.
   local cmd="$HOME/.claude/bin/claude-ssh-agent || echo \"claude-ssh-agent: commits will fail until op is signed in and this is re-run\""
+  # Match the exact command, never a substring: a user hook that merely mentions
+  # claude-ssh-agent -- a wrapper, a monitor -- would otherwise be deleted on the first
+  # run, which is the opposite of the promise that their hooks survive. The previous
+  # command is recorded so a changed one is still replaced rather than duplicated.
+  local hookmark="$HOME/.claude/settings-hook.installed"
+  local prevcmd=""
+  [ -f "$hookmark" ] && prevcmd="$(cat "$hookmark")"
   local tmp merged
   mkdir -p "$HOME/.claude"
   [ -f "$settings" ] || printf '{}\n' > "$settings"
@@ -313,21 +323,22 @@ install_claude_settings() {
   # both, and how a user can pin the behaviour if their jq is unusual.
   local tool="${CLAUDE_JSON_TOOL:-auto}"
   if { [ "$tool" = "auto" ] || [ "$tool" = "jq" ]; } && command -v jq >/dev/null 2>&1; then
-    merged=$(jq --arg cfg "$HOME/.claude/gitconfig" --arg cmd "$cmd" '
+    merged=$(jq --arg cfg "$HOME/.claude/gitconfig" --arg cmd "$cmd" --arg prev "$prevcmd" '
       .env = ((.env // {}) + {GIT_CONFIG_GLOBAL: $cfg})
       | .hooks = (.hooks // {})
       | .hooks.SessionStart = (
           ((.hooks.SessionStart // [])
             | map(
-                if ((.hooks // []) | map(.command // "") | any(test("claude-ssh-agent")))
-                then ((.hooks |= map(select((.command // "") | test("claude-ssh-agent") | not)))
+                if ((.hooks // []) | map(.command // "") | any(. == $cmd or (. == $prev and $prev != "")))
+                then ((.hooks |= map(select((.command // "") as $c
+                        | ($c != $cmd) and (($c != $prev) or ($prev == "")))))
                       | if (.hooks | length) == 0 then empty else . end)
                 else . end))
           + [{hooks: [{type: "command", command: $cmd, timeout: 30,
                        statusMessage: "Loading the git signing identity"}]}])
     ' "$settings" 2>/dev/null) || merged=""
   elif { [ "$tool" = "auto" ] || [ "$tool" = "python3" ]; } && command -v python3 >/dev/null 2>&1; then
-    merged=$(CLAUDE_GITCONFIG="$HOME/.claude/gitconfig" CLAUDE_HOOK_CMD="$cmd" python3 - "$settings" <<'PYEOF' 2>/dev/null
+    merged=$(CLAUDE_GITCONFIG="$HOME/.claude/gitconfig" CLAUDE_HOOK_CMD="$cmd" CLAUDE_HOOK_PREV="$prevcmd" python3 - "$settings" <<'PYEOF' 2>/dev/null
 import json, os, sys
 p = sys.argv[1]
 # A parse failure must fail the merge, not start from {} -- replacing a settings
@@ -339,6 +350,10 @@ except Exception:
 if not isinstance(d, dict):
     raise SystemExit(1)
 cmd = os.environ["CLAUDE_HOOK_CMD"]
+prev = os.environ.get("CLAUDE_HOOK_PREV") or None
+def ours(c):
+    c = c or ""
+    return c == cmd or (prev is not None and c == prev)
 d.setdefault("env", {})["GIT_CONFIG_GLOBAL"] = os.environ["CLAUDE_GITCONFIG"]
 hooks = d.setdefault("hooks", {})
 # Drop only OUR hook object, not the entry around it: a SessionStart entry may hold
@@ -347,9 +362,9 @@ hooks = d.setdefault("hooks", {})
 kept = []
 for e in hooks.get("SessionStart", []):
     hs = e.get("hooks", [])
-    if any("claude-ssh-agent" in (h.get("command") or "") for h in hs):
+    if any(ours(h.get("command")) for h in hs):
         e = dict(e)
-        e["hooks"] = [h for h in hs if "claude-ssh-agent" not in (h.get("command") or "")]
+        e["hooks"] = [h for h in hs if not ours(h.get("command"))]
         if not e["hooks"]:
             continue
     kept.append(e)
@@ -381,6 +396,9 @@ PYEOF
   else
     rm -f "$tmp"
   fi
+  # Recorded only once the merge has actually happened, so the next run knows which
+  # exact command to replace rather than falling back to a substring.
+  printf '%s\n' "$cmd" > "$hookmark"
 }
 
 install_agent_rules() {

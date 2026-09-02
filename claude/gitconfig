@@ -42,6 +42,15 @@
 [commit]
 	gpgsign = true
 
+# core.sshCommand governs the ssh transport only. An https remote would instead use the
+# credential helpers inherited from the personal config and push as the human account,
+# which is the same bypass the ssh side is built to prevent -- and https is the default
+# for anything cloned from the web UI or by `gh`. Rewriting the URL sends those through
+# the same key. A repository the agent key cannot reach now fails, rather than quietly
+# succeeding as Jodok.
+[url "git@github.com:"]
+	insteadOf = https://github.com/
+
 [core]
 	# Pushes authenticate with claude-auth from the same agent. The separate ssh
 	# config exists because ~/.ssh/config may pin github.com to the 1Password agent

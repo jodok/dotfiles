@@ -313,9 +313,11 @@ test -f "$HOME/.claude/claude-auth.pub"
 # Re-running must remove only our hook object, not the entry: dropping the whole entry
 # would silently delete their sibling commands and the matcher along with it. Both
 # merge paths have to agree, so each is exercised.
+ourcmd="$(cat "$HOME/.claude/settings-hook.installed")"
 for tool in jq python3; do
-  printf '{"hooks":{"SessionStart":[{"matcher":"startup","hooks":[{"type":"command","command":"echo sibling"},{"type":"command","command":"~/.claude/bin/claude-ssh-agent"}]},{"hooks":[{"type":"command","command":"echo lonely"}]}]}}\n' \
-    > "$HOME/.claude/settings.json"
+  jq -n --arg ours "$ourcmd" '{hooks:{SessionStart:[
+      {matcher:"startup",hooks:[{type:"command",command:"echo sibling"},{type:"command",command:$ours}]},
+      {hooks:[{type:"command",command:"echo lonely"}]}]}}' > "$HOME/.claude/settings.json"
   CLAUDE_JSON_TOOL="$tool" "$ROOT_DIR/install.sh" >/dev/null
   test "$(jq -r '[.hooks.SessionStart[].hooks[].command] | map(select(test("echo sibling"))) | length' "$HOME/.claude/settings.json")" = 1
   test "$(jq -r '[.hooks.SessionStart[].hooks[].command] | map(select(test("echo lonely"))) | length' "$HOME/.claude/settings.json")" = 1
@@ -324,10 +326,22 @@ for tool in jq python3; do
 done
 
 # An entry that held nothing but our hook is removed rather than left behind empty.
-printf '{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"~/.claude/bin/claude-ssh-agent"}]}]}}\n' \
+jq -n --arg ours "$ourcmd" '{hooks:{SessionStart:[{hooks:[{type:"command",command:$ours}]}]}}' \
   > "$HOME/.claude/settings.json"
 "$ROOT_DIR/install.sh" >/dev/null
 test "$(jq -r '.hooks.SessionStart | length' "$HOME/.claude/settings.json")" = 1
+
+# A user hook that merely mentions claude-ssh-agent -- a wrapper, a monitor -- is not
+# ours and must survive, including on a first run with no marker recorded yet.
+for tool in jq python3; do
+  rm -f "$HOME/.claude/settings-hook.installed"
+  jq -n '{hooks:{SessionStart:[{hooks:[
+      {type:"command",command:"~/bin/watch-claude-ssh-agent --verbose"}]}]}}' \
+    > "$HOME/.claude/settings.json"
+  CLAUDE_JSON_TOOL="$tool" "$ROOT_DIR/install.sh" >/dev/null
+  test "$(jq -r '[.hooks.SessionStart[].hooks[].command] | map(select(test("watch-claude-ssh-agent"))) | length' "$HOME/.claude/settings.json")" = 1
+  test "$(jq -r '[.hooks.SessionStart[].hooks[].command] | map(select(test("claude-ssh-agent"))) | length' "$HOME/.claude/settings.json")" = 2
+done
 
 # GIT_CONFIG_GLOBAL replaces git's XDG global config as well as ~/.gitconfig, so the
 # managed config has to include it or every agent session silently loses credential
@@ -431,7 +445,10 @@ done
 grep -Fq "$HOME/.claude/bin/claude-ssh-sign" "$HOME/.claude/gitconfig"
 grep -Fq "$HOME/.claude/ssh_config" "$HOME/.claude/gitconfig"
 grep -Fq "$HOME/.claude/run/agent.sock" "$HOME/.claude/ssh_config"
-test "$(jq -r '[.hooks.SessionStart[].hooks[].command] | map(select(test("claude-ssh-agent")))[0]' "$HOME/.claude/settings.json" | cut -c1)" = '/'
+# The hook this installer wrote, identified exactly rather than by substring, since a
+# user hook may legitimately mention the same name.
+test "$(cut -c1 < "$HOME/.claude/settings-hook.installed")" = '/'
+test "$(jq -r --arg ours "$(cat "$HOME/.claude/settings-hook.installed")" '[.hooks.SessionStart[].hooks[].command] | map(select(. == $ours)) | length' "$HOME/.claude/settings.json")" = 1
 # Comments keep their ~, so the installed file still reads as documentation.
 grep -q '^#.*~/' "$HOME/.claude/gitconfig"
 
@@ -444,5 +461,22 @@ test "$baks_before" = "$baks_after"
 
 # ...and it still resolves as a git config.
 test "$(GIT_CONFIG_GLOBAL="$HOME/.claude/gitconfig" git -C "$HOME/repo" config --get gpg.ssh.program)" = "$HOME/.claude/bin/claude-ssh-sign"
+
+# An https remote must not slip past the identity: core.sshCommand governs the ssh
+# transport only, so without a rewrite git would fall back to the credential helpers
+# inherited from the personal config and push as the human account.
+test "$(GIT_CONFIG_GLOBAL="$HOME/.claude/gitconfig" git -C "$HOME/repo" config --get url.git@github.com:.insteadOf)" = 'https://github.com/'
+git -C "$HOME/repo" remote add origin https://github.com/jodok/dotfiles.git 2>/dev/null || true
+test "$(GIT_CONFIG_GLOBAL="$HOME/.claude/gitconfig" git -C "$HOME/repo" remote get-url origin)" = 'git@github.com:jodok/dotfiles.git'
+
+# The loader and the signing shim must name the same absolute socket the ssh config
+# does; deriving it from runtime HOME would let a repository that sets HOME point the
+# hook at one socket while every push looked at another.
+for f in "$HOME/.claude/bin/claude-ssh-agent" "$HOME/.claude/bin/claude-ssh-sign"; do
+  if grep -v '^[[:space:]]*#' "$f" | grep -Fq '$HOME/'; then
+    echo "$f still derives paths from runtime HOME" >&2; exit 1
+  fi
+  grep -Fq "$HOME/.claude/run/agent.sock" "$f"
+done
 
 printf 'install tests passed\n'
