@@ -67,6 +67,62 @@ if holds_expected_keys; then
   exit 0
 fi
 
+# Rebuilding the agent is not safe to run concurrently. Several sessions opening at
+# once each found no agent, and each ran `rm -f "$SOCK"; ssh-agent -a "$SOCK"` -- so N
+# simultaneous starts left N agents, every one holding both private keys in memory,
+# and only the last one still reachable through the socket. The rest were unkillable
+# by any later run and lived until reboot. `mkdir` is the atomic test-and-set every
+# POSIX sh has; macOS has no flock.
+LOCK="$HOME/.claude/run/agent.lock"
+mkdir -p "$(dirname "$SOCK")"
+chmod 700 "$(dirname "$SOCK")"
+
+# A run killed between taking the lock and its trap leaves the directory behind, and a
+# lock nobody holds would wedge every future session. The owner writes its pid inside,
+# so a lock whose owner is gone can be told from one that is merely busy.
+lock_is_stale() {
+  owner="$(cat "$LOCK/pid" 2>/dev/null || true)"
+  if [ -n "$owner" ]; then
+    kill -0 "$owner" 2>/dev/null && return 1
+    return 0
+  fi
+  # No pid yet: either the owner has not written it -- a window of milliseconds between
+  # its mkdir and that write -- or it died inside that window. Only the second is still
+  # true after a few seconds of waiting.
+  [ "$waited" -ge 3 ]
+}
+
+# Wait rather than skip the load: a session that gave up has no agent at all, so every
+# commit and push in it would fail. The SessionStart hook allows 30s.
+waited=0
+until mkdir "$LOCK" 2>/dev/null; do
+  # The holder may already have done exactly the work this run was going to do.
+  if holds_expected_keys; then
+    echo "claude-ssh-agent: already loaded at $SOCK"
+    exit 0
+  fi
+  if lock_is_stale; then
+    rm -rf "$LOCK"
+    continue
+  fi
+  waited=$((waited + 1))
+  if [ "$waited" -ge 20 ]; then
+    echo "claude-ssh-agent: another run has held $LOCK for ${waited}s; giving up" >&2
+    exit 1
+  fi
+  sleep 1
+done
+trap 'rm -rf "$LOCK"' EXIT INT TERM
+echo $$ > "$LOCK/pid"
+
+# Between this run's own check above and the lock it just took, the holder may have
+# built the agent. Checking again here is what keeps a burst of sessions down to one
+# rebuild and one pair of 1Password reads.
+if holds_expected_keys; then
+  echo "claude-ssh-agent: already loaded at $SOCK"
+  exit 0
+fi
+
 command -v op >/dev/null 2>&1 || { echo "claude-ssh-agent: the 1Password CLI (op) is required" >&2; exit 1; }
 
 # A session may carry OP_SERVICE_ACCOUNT_TOKEN, and op prefers it over the personal
@@ -83,8 +139,11 @@ op_read() {
 op_read "$SIGNING" >/dev/null 2>&1 ||
   { echo "claude-ssh-agent: cannot read $SIGNING — is op signed in, and does that identity have the vault?" >&2; exit 1; }
 
-mkdir -p "$(dirname "$SOCK")"
-chmod 700 "$(dirname "$SOCK")"
+# Take down whatever was behind this path before starting a replacement. `rm -f` alone
+# only unlinks the socket: the agent keeps running with both keys in memory, reachable
+# by nothing and killable by no later run. Matching the full command line is also what
+# reaps agents orphaned by earlier versions of this script.
+pkill -f "ssh-agent -a $SOCK" 2>/dev/null || true
 rm -f "$SOCK"
 ssh-agent -a "$SOCK" >/dev/null
 

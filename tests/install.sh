@@ -389,6 +389,53 @@ grep -Fq '.claude/run/agent.sock' "$HOME/.claude/ssh_config"
 grep -Fq '.claude/run/agent.sock' "$HOME/.claude/bin/claude-ssh-agent"
 grep -Fq '.claude/run/agent.sock' "$HOME/.claude/bin/claude-ssh-sign"
 
+# Concurrent starts must not each rebuild the agent. They used to: several sessions
+# opening at once every one ran `rm -f "$SOCK"; ssh-agent -a "$SOCK"`, leaving N agents
+# holding both private keys with only the last reachable, and the rest alive until
+# reboot. A run now takes a lock first, and releases it however it exits -- this one
+# fails at the refusing `op`, well past where the lock is taken.
+rm -rf "$HOME/.claude/run/agent.lock"
+"$HOME/.claude/bin/claude-ssh-agent" >/dev/null 2>&1 || true
+if [ -e "$HOME/.claude/run/agent.lock" ]; then
+  echo "loader left its lock behind after failing" >&2; exit 1
+fi
+
+# A lock whose owner died -- killed between the mkdir and the trap -- must not wedge
+# every future session. A pid that cannot be signalled is the tell.
+mkdir -p "$HOME/.claude/run/agent.lock"
+dead="$(bash -c 'echo $$')"
+while kill -0 "$dead" 2>/dev/null; do dead=$((dead + 1)); done
+echo "$dead" > "$HOME/.claude/run/agent.lock/pid"
+"$HOME/.claude/bin/claude-ssh-agent" >/dev/null 2>&1 || true
+if [ -e "$HOME/.claude/run/agent.lock" ]; then
+  echo "loader did not break a stale lock" >&2; exit 1
+fi
+
+# A lock a live process holds must make the next run wait, not skip the load: a session
+# that gave up would have no agent at all, and every commit in it would fail.
+mkdir -p "$HOME/.claude/run/agent.lock"
+echo $$ > "$HOME/.claude/run/agent.lock/pid"
+"$HOME/.claude/bin/claude-ssh-agent" >/dev/null 2>&1 &
+waiter=$!
+sleep 3
+if ! kill -0 "$waiter" 2>/dev/null; then
+  echo "loader did not wait for a held lock" >&2; exit 1
+fi
+kill "$waiter" 2>/dev/null || true
+wait "$waiter" 2>/dev/null || true
+rm -rf "$HOME/.claude/run/agent.lock"
+
+# Unlinking the socket leaves the agent behind it running, with both keys in memory and
+# nothing able to reach or kill it. The sweep has to come before the replacement starts,
+# or it takes down the agent this run just built.
+python3 - "$HOME/.claude/bin/claude-ssh-agent" <<'PYEOF'
+import sys
+text = open(sys.argv[1]).read()
+sweep = text.index('pkill -f "ssh-agent -a $SOCK"')
+start = text.index('ssh-agent -a "$SOCK" >/dev/null')
+assert sweep < start, "the orphan sweep must precede the replacement agent"
+PYEOF
+
 # A half-successful provisioning run must not leave a mixed generation on disk: the
 # activation guard only tests that both files exist, so a new signing key beside the
 # previous auth key would look complete and would fail every push after a rotation.

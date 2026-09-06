@@ -90,7 +90,8 @@ claude/                # installed to ~/.claude/
                        #   ~/.gitconfig, which it includes)
   ssh_config           # every git remote via the agent's own ssh-agent; does not
                        #   include ~/.ssh/config, so ssh aliases do not apply
-  bin/claude-ssh-agent # loads the keys from 1Password into a plain ssh-agent
+  bin/claude-ssh-agent # loads the keys from 1Password into a plain ssh-agent;
+                       #   one rebuild at a time, under ~/.claude/run/agent.lock
   bin/claude-ssh-sign  # pins SSH_AUTH_SOCK for ssh-keygen when git signs
 ```
 
