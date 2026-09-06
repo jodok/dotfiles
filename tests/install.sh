@@ -392,59 +392,39 @@ grep -Fq '.claude/run/agent.sock' "$HOME/.claude/bin/claude-ssh-sign"
 # Concurrent starts must not each rebuild the agent. They used to: several sessions
 # opening at once every one ran `rm -f "$SOCK"; ssh-agent -a "$SOCK"`, leaving N agents
 # holding both private keys with only the last reachable, and the rest alive until
-# reboot. A run now takes a lock first, and releases it however it exits -- this one
-# fails at the refusing `op`, well past where the lock is taken.
-rm -rf "$HOME/.claude/run/agent.lock"
-"$HOME/.claude/bin/claude-ssh-agent" >/dev/null 2>&1 || true
-if [ -e "$HOME/.claude/run/agent.lock" ]; then
-  echo "loader left its lock behind after failing" >&2; exit 1
-fi
+# reboot. The lock is the kernel's, so there is no lock file to leave behind and none to
+# judge stale -- a hand-broken lock file cannot be made correct in POSIX sh, because
+# inspecting it and breaking it are two steps.
+python3 - "$HOME/.claude/bin/claude-ssh-agent" <<'PYEOF'
+import re, sys
+text = open(sys.argv[1]).read()
+assert re.search(r'^exec 9>"\$LOCK"$', text, re.M), "the lock must be held on a descriptor"
+assert re.search(r'^if ! lockf -s -t \d+ 9; then$', text, re.M), "lockf must take the lock, with a timeout"
+for hand_rolled in ('mkdir "$LOCK"', 'rm -rf "$LOCK"', '$LOCK/pid'):
+    assert hand_rolled not in text, f"lock state that has to be judged stale: {hand_rolled}"
+PYEOF
 
-# A lock whose owner was killed after writing its pid must not wedge every future
-# session. A pid that cannot be signalled is the tell.
-mkdir -p "$HOME/.claude/run/agent.lock"
-dead="$(bash -c 'echo $$')"
-while kill -0 "$dead" 2>/dev/null; do dead=$((dead + 1)); done
-echo "$dead" > "$HOME/.claude/run/agent.lock/pid"
-"$HOME/.claude/bin/claude-ssh-agent" >/dev/null 2>&1 || true
-if [ -e "$HOME/.claude/run/agent.lock" ]; then
-  echo "loader did not break a stale lock" >&2; exit 1
-fi
+# The agent must not inherit the lock descriptor. A BSD flock lives as long as any
+# descriptor on the open file and the agent is meant to stay up indefinitely, so
+# inheriting it would hold the lock forever -- every later session would wait the full
+# timeout and then start with no agent, which is worse than the bug being fixed here.
+python3 - "$HOME/.claude/bin/claude-ssh-agent" <<'PYEOF'
+import re, sys
+text = open(sys.argv[1]).read()
+m = re.search(r'^ssh-agent -a "\$SOCK".*$', text, re.M)
+assert m, "no ssh-agent invocation found"
+assert '9>&-' in m.group(0), "the agent must be spawned with the lock descriptor closed"
+PYEOF
 
-# A lock whose owner died in the other window -- between its mkdir and the pid write --
-# carries no pid at all. That is indistinguishable from a holder still inside that
-# window, so it may only be broken after the wait has gone on long enough to rule the
-# second out.
-mkdir -p "$HOME/.claude/run/agent.lock"
-"$HOME/.claude/bin/claude-ssh-agent" >/dev/null 2>&1 || true
-if [ -e "$HOME/.claude/run/agent.lock" ]; then
-  echo "loader did not break a stale lock carrying no pid" >&2; exit 1
-fi
-
-# A live pid whose process is not this script must not hold the lock either: pids wrap,
-# and a stale lock sitting for hours can end up naming something unrelated.
-mkdir -p "$HOME/.claude/run/agent.lock"
-echo $$ > "$HOME/.claude/run/agent.lock/pid"
-"$HOME/.claude/bin/claude-ssh-agent" >/dev/null 2>&1 || true
-if [ -e "$HOME/.claude/run/agent.lock" ]; then
-  echo "loader treated an unrelated live pid as the lock owner" >&2; exit 1
-fi
-
-# A lock a running loader holds must make the next run wait, not skip the load: a
-# session that gave up would have no agent at all, and every commit in it would fail.
-# The holder has to look like this script to `ps`, which is what the check above tests.
-cat > "$TEST_DIR/bin/claude-ssh-agent-holder" <<'HOLDEOF'
-#!/usr/bin/env bash
-# Not `exec sleep`: the loader identifies a lock's owner by command line, so the holder
-# has to keep one that names this script. Short sleeps so the child orphaned when the
-# wrapper is killed outlives the suite by a second rather than a minute.
-while :; do sleep 1; done
-HOLDEOF
-chmod +x "$TEST_DIR/bin/claude-ssh-agent-holder"
-"$TEST_DIR/bin/claude-ssh-agent-holder" &
+# A run that cannot take the lock waits rather than skipping the load: a session that
+# gave up would have no agent at all, and every commit in it would fail.
+holder_lock="$HOME/.claude/run/agent.lock"
+mkdir -p "$HOME/.claude/run"
+# 9>&- on the sleep for the same reason the loader closes it for the agent: a child
+# holding the descriptor would keep the lock after this holder is killed.
+sh -c 'exec 9>"$1"; lockf -s -t 5 9 || exit 1; while :; do sleep 1 9>&-; done' -- "$holder_lock" &
 holder=$!
-mkdir -p "$HOME/.claude/run/agent.lock"
-echo "$holder" > "$HOME/.claude/run/agent.lock/pid"
+sleep 1
 "$HOME/.claude/bin/claude-ssh-agent" >/dev/null 2>&1 &
 waiter=$!
 sleep 3
@@ -455,44 +435,13 @@ kill "$waiter" 2>/dev/null || true
 wait "$waiter" 2>/dev/null || true
 kill "$holder" 2>/dev/null || true
 wait "$holder" 2>/dev/null || true
-rm -rf "$HOME/.claude/run/agent.lock"
 
-# Breaking a stale lock must be atomic. `rm -rf` then `mkdir` lets two waiters that both
-# judged it stale each believe they won -- and both rebuild.
-python3 - "$HOME/.claude/bin/claude-ssh-agent" <<'PYEOF'
-import re, sys
-text = open(sys.argv[1]).read()
-body = text[text.index('until mkdir "$LOCK"'):text.index("\ntrap '")]
-assert re.search(r'mv "\$LOCK" "\$LOCK\.stale', body), "stale locks must be broken by rename"
-assert 'rm -rf "$LOCK"\n' not in body, "a bare rm -rf of the live lock is not atomic"
-PYEOF
-
-# A trap that does not exit returns to the script: a holder signalled by pid would drop
-# the lock and keep rebuilding without it.
-python3 - "$HOME/.claude/bin/claude-ssh-agent" <<'PYEOF'
-import re, sys
-text = open(sys.argv[1]).read()
-m = re.search(r"^trap '([^']*)' INT TERM$", text, re.M)
-assert m, "INT and TERM need a handler of their own"
-assert 'exit' in m.group(1), "the INT/TERM handler must exit rather than resume"
-PYEOF
-
-# Unlinking the socket leaves the agent behind it running, with both keys in memory and
-# nothing able to reach or kill it. The sweep has to come before the replacement starts,
-# or it takes down the agent this run just built.
-python3 - "$HOME/.claude/bin/claude-ssh-agent" <<'PYEOF'
-import sys
-text = open(sys.argv[1]).read()
-sweep = text.index('pgrep -f "ssh-agent -a $SOCK"')
-start = text.index('ssh-agent -a "$SOCK" >/dev/null')
-assert sweep < start, "the orphan sweep must precede the replacement agent"
-# Signalling does not wait, and an ssh-agent unlinks this very path on its way out: one
-# scheduled after the replacement bound would delete the new socket. The sweep has to
-# confirm the old agents are gone, not just that they were signalled.
-between = text[sweep:start]
-assert 'kill -0' in between, "the sweep must wait for the agents it signalled to exit"
-assert 'kill -9' in between, "the sweep must have a last resort for an agent that ignores TERM"
-PYEOF
+# And a run that finishes must leave the lock free, however it finished -- this one dies
+# at the refusing `op`, well past where the lock is taken.
+"$HOME/.claude/bin/claude-ssh-agent" >/dev/null 2>&1 || true
+if ! sh -c 'exec 9>"$1"; lockf -s -t 1 9' -- "$holder_lock"; then
+  echo "loader held its lock past exit" >&2; exit 1
+fi
 
 # A half-successful provisioning run must not leave a mixed generation on disk: the
 # activation guard only tests that both files exist, so a new signing key beside the

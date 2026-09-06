@@ -71,76 +71,26 @@ fi
 # once each found no agent, and each ran `rm -f "$SOCK"; ssh-agent -a "$SOCK"` -- so N
 # simultaneous starts left N agents, every one holding both private keys in memory,
 # and only the last one still reachable through the socket. The rest were unkillable
-# by any later run and lived until reboot. `mkdir` is the atomic test-and-set every
-# POSIX sh has; macOS has no flock.
+# by any later run and lived until reboot.
+#
+# The kernel holds the lock, not a file's existence: lockf(1) takes a BSD flock on fd 9
+# and the kernel drops it when this process ends, however it ends. A lock that has to be
+# judged abandoned and broken by hand cannot be made correct in POSIX sh -- inspecting it
+# and breaking it are two steps, so a run delayed between them breaks the lock of whoever
+# acquired it in between, and both rebuild. There is no state here to judge.
 LOCK="$HOME/.claude/run/agent.lock"
 mkdir -p "$(dirname "$SOCK")"
 chmod 700 "$(dirname "$SOCK")"
-
-# A run killed between taking the lock and its trap leaves the directory behind, and a
-# lock nobody holds would wedge every future session. The owner writes its pid inside,
-# so a lock whose owner is gone can be told from one that is merely busy.
-lock_is_stale() {
-  owner="$(cat "$LOCK/pid" 2>/dev/null || true)"
-  if [ -n "$owner" ]; then
-    kill -0 "$owner" 2>/dev/null || return 0
-    # Signalling a pid is not enough on its own. A stale lock can sit for hours if no
-    # session starts, macOS wraps pids at 99999, and a pid reused by some long-lived
-    # process would make every session wait the full timeout and then start with no
-    # agent at all -- until that unrelated process happened to exit.
-    ps -o command= -p "$owner" 2>/dev/null | grep -q claude-ssh-agent || return 0
-    return 1
-  fi
-  # No pid yet: either the owner has not written it -- a window of milliseconds between
-  # its mkdir and that write -- or it died inside that window. Only the second is still
-  # true after a few seconds of waiting.
-  [ "$waited" -ge 3 ]
-}
-
+exec 9>"$LOCK"
 # Wait rather than skip the load: a session that gave up has no agent at all, so every
-# commit and push in it would fail. The SessionStart hook allows 30s.
-waited=0
-until mkdir "$LOCK" 2>/dev/null; do
-  # The holder may already have done exactly the work this run was going to do.
-  if holds_expected_keys; then
-    echo "claude-ssh-agent: already loaded at $SOCK"
-    exit 0
-  fi
-  # Breaking a stale lock has to be a single step. `rm -rf` followed by `mkdir` is two,
-  # and every waiter that judged the lock stale runs both: one deletes the lock another
-  # has just re-created, and both go on to rebuild -- precisely what this lock exists to
-  # prevent. A rename only one of them can win is the whole difference.
-  if lock_is_stale; then
-    rm -rf "$LOCK.stale.$$"
-    if mv "$LOCK" "$LOCK.stale.$$" 2>/dev/null; then
-      rm -rf "$LOCK.stale.$$"
-      # A new holder can take the lock before the next attempt below, and it starts out
-      # in the same mkdir-to-pid window that reads as stale. Without this reset the next
-      # pass would break a lock a millisecond old.
-      waited=0
-    fi
-  fi
-  # Counted and slept on every pass, breaks included. A `continue` here would spin
-  # without either whenever `mkdir` fails for some reason other than the lock already
-  # existing -- an unwritable ~/.claude/run, a full disk.
-  waited=$((waited + 1))
-  if [ "$waited" -ge 20 ]; then
-    echo "claude-ssh-agent: another run has held $LOCK for ${waited}s; giving up" >&2
-    exit 1
-  fi
-  sleep 1
-done
-trap 'rm -rf "$LOCK"' EXIT
-# A trap handler that does not exit returns to the script and carries on. A holder
-# signalled by pid rather than by process group -- a supervisor timing out the hook, a
-# hand-run pkill -- would otherwise drop the lock here and keep rebuilding without it,
-# letting the next session rebuild at the same time.
-trap 'rm -rf "$LOCK"; exit 1' INT TERM
-echo $$ > "$LOCK/pid"
+# commit and push in it would fail. 20s stays inside the SessionStart hook's 30s budget.
+if ! lockf -s -t 20 9; then
+  echo "claude-ssh-agent: another run held $LOCK for 20s; giving up" >&2
+  exit 1
+fi
 
-# Between this run's own check above and the lock it just took, the holder may have
-# built the agent. Checking again here is what keeps a burst of sessions down to one
-# rebuild and one pair of 1Password reads.
+# The run that held the lock may have done this run's work already. Re-checking here is
+# what keeps a burst of sessions down to one rebuild and one pair of 1Password reads.
 if holds_expected_keys; then
   echo "claude-ssh-agent: already loaded at $SOCK"
   exit 0
@@ -191,7 +141,11 @@ if [ -n "$olds" ]; then
   done
 fi
 rm -f "$SOCK"
-ssh-agent -a "$SOCK" >/dev/null
+# 9>&- closes the lock descriptor for the agent. A BSD flock lives as long as any
+# descriptor on the open file, and the agent is meant to stay up indefinitely -- inherit
+# the fd and it holds this lock forever, so every later session waits the full timeout
+# and then starts with no agent at all.
+ssh-agent -a "$SOCK" 9>&- >/dev/null
 
 # `op read` emits no trailing newline and ssh-add needs one; the default field is
 # PKCS#8, which ssh-add rejects, hence ssh-format=openssh above.
