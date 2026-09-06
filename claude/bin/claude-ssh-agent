@@ -166,7 +166,30 @@ op_read "$SIGNING" >/dev/null 2>&1 ||
 # only unlinks the socket: the agent keeps running with both keys in memory, reachable
 # by nothing and killable by no later run. Matching the full command line is also what
 # reaps agents orphaned by earlier versions of this script.
-pkill -f "ssh-agent -a $SOCK" 2>/dev/null || true
+#
+# Signalling is not enough on its own, because it does not wait. An ssh-agent handles
+# SIGTERM by unlinking its socket path -- this very path -- so one that had not been
+# scheduled yet by the time the replacement bound would delete the new socket, leaving
+# the session with an agent nothing can reach. Wait for them to actually be gone.
+olds="$(pgrep -f "ssh-agent -a $SOCK" 2>/dev/null || true)"
+if [ -n "$olds" ]; then
+  kill $olds 2>/dev/null || true
+  waits=0
+  while [ "$waits" -lt 50 ]; do
+    still=""
+    for pid in $olds; do
+      if kill -0 "$pid" 2>/dev/null; then still="$still $pid"; fi
+    done
+    [ -n "$still" ] || break
+    sleep 0.1
+    waits=$((waits + 1))
+  done
+  # Anything alive after five seconds is not going to act on the signal. SIGKILL leaves
+  # it no handler to run, so it cannot unlink the path about to be rebound either.
+  for pid in $olds; do
+    if kill -0 "$pid" 2>/dev/null; then kill -9 "$pid" 2>/dev/null || true; fi
+  done
+fi
 rm -f "$SOCK"
 ssh-agent -a "$SOCK" >/dev/null
 

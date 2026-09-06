@@ -483,9 +483,15 @@ PYEOF
 python3 - "$HOME/.claude/bin/claude-ssh-agent" <<'PYEOF'
 import sys
 text = open(sys.argv[1]).read()
-sweep = text.index('pkill -f "ssh-agent -a $SOCK"')
+sweep = text.index('pgrep -f "ssh-agent -a $SOCK"')
 start = text.index('ssh-agent -a "$SOCK" >/dev/null')
 assert sweep < start, "the orphan sweep must precede the replacement agent"
+# Signalling does not wait, and an ssh-agent unlinks this very path on its way out: one
+# scheduled after the replacement bound would delete the new socket. The sweep has to
+# confirm the old agents are gone, not just that they were signalled.
+between = text[sweep:start]
+assert 'kill -0' in between, "the sweep must wait for the agents it signalled to exit"
+assert 'kill -9' in between, "the sweep must have a last resort for an agent that ignores TERM"
 PYEOF
 
 # A half-successful provisioning run must not leave a mixed generation on disk: the
