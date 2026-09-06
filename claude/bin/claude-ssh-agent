@@ -67,6 +67,35 @@ if holds_expected_keys; then
   exit 0
 fi
 
+# Rebuilding the agent is not safe to run concurrently. Several sessions opening at
+# once each found no agent, and each ran `rm -f "$SOCK"; ssh-agent -a "$SOCK"` -- so N
+# simultaneous starts left N agents, every one holding both private keys in memory,
+# and only the last one still reachable through the socket. The rest were unkillable
+# by any later run and lived until reboot.
+#
+# The kernel holds the lock, not a file's existence: lockf(1) takes a BSD flock on fd 9
+# and the kernel drops it when this process ends, however it ends. A lock that has to be
+# judged abandoned and broken by hand cannot be made correct in POSIX sh -- inspecting it
+# and breaking it are two steps, so a run delayed between them breaks the lock of whoever
+# acquired it in between, and both rebuild. There is no state here to judge.
+LOCK="$HOME/.claude/run/agent.lock"
+mkdir -p "$(dirname "$SOCK")"
+chmod 700 "$(dirname "$SOCK")"
+exec 9>"$LOCK"
+# Wait rather than skip the load: a session that gave up has no agent at all, so every
+# commit and push in it would fail. 20s stays inside the SessionStart hook's 30s budget.
+if ! lockf -s -t 20 9; then
+  echo "claude-ssh-agent: another run held $LOCK for 20s; giving up" >&2
+  exit 1
+fi
+
+# The run that held the lock may have done this run's work already. Re-checking here is
+# what keeps a burst of sessions down to one rebuild and one pair of 1Password reads.
+if holds_expected_keys; then
+  echo "claude-ssh-agent: already loaded at $SOCK"
+  exit 0
+fi
+
 command -v op >/dev/null 2>&1 || { echo "claude-ssh-agent: the 1Password CLI (op) is required" >&2; exit 1; }
 
 # A session may carry OP_SERVICE_ACCOUNT_TOKEN, and op prefers it over the personal
@@ -83,10 +112,40 @@ op_read() {
 op_read "$SIGNING" >/dev/null 2>&1 ||
   { echo "claude-ssh-agent: cannot read $SIGNING — is op signed in, and does that identity have the vault?" >&2; exit 1; }
 
-mkdir -p "$(dirname "$SOCK")"
-chmod 700 "$(dirname "$SOCK")"
+# Take down whatever was behind this path before starting a replacement. `rm -f` alone
+# only unlinks the socket: the agent keeps running with both keys in memory, reachable
+# by nothing and killable by no later run. Matching the full command line is also what
+# reaps agents orphaned by earlier versions of this script.
+#
+# Signalling is not enough on its own, because it does not wait. An ssh-agent handles
+# SIGTERM by unlinking its socket path -- this very path -- so one that had not been
+# scheduled yet by the time the replacement bound would delete the new socket, leaving
+# the session with an agent nothing can reach. Wait for them to actually be gone.
+olds="$(pgrep -f "ssh-agent -a $SOCK" 2>/dev/null || true)"
+if [ -n "$olds" ]; then
+  kill $olds 2>/dev/null || true
+  waits=0
+  while [ "$waits" -lt 50 ]; do
+    still=""
+    for pid in $olds; do
+      if kill -0 "$pid" 2>/dev/null; then still="$still $pid"; fi
+    done
+    [ -n "$still" ] || break
+    sleep 0.1
+    waits=$((waits + 1))
+  done
+  # Anything alive after five seconds is not going to act on the signal. SIGKILL leaves
+  # it no handler to run, so it cannot unlink the path about to be rebound either.
+  for pid in $olds; do
+    if kill -0 "$pid" 2>/dev/null; then kill -9 "$pid" 2>/dev/null || true; fi
+  done
+fi
 rm -f "$SOCK"
-ssh-agent -a "$SOCK" >/dev/null
+# 9>&- closes the lock descriptor for the agent. A BSD flock lives as long as any
+# descriptor on the open file, and the agent is meant to stay up indefinitely -- inherit
+# the fd and it holds this lock forever, so every later session waits the full timeout
+# and then starts with no agent at all.
+ssh-agent -a "$SOCK" 9>&- >/dev/null
 
 # `op read` emits no trailing newline and ssh-add needs one; the default field is
 # PKCS#8, which ssh-add rejects, hence ssh-format=openssh above.

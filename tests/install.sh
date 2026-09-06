@@ -389,6 +389,60 @@ grep -Fq '.claude/run/agent.sock' "$HOME/.claude/ssh_config"
 grep -Fq '.claude/run/agent.sock' "$HOME/.claude/bin/claude-ssh-agent"
 grep -Fq '.claude/run/agent.sock' "$HOME/.claude/bin/claude-ssh-sign"
 
+# Concurrent starts must not each rebuild the agent. They used to: several sessions
+# opening at once every one ran `rm -f "$SOCK"; ssh-agent -a "$SOCK"`, leaving N agents
+# holding both private keys with only the last reachable, and the rest alive until
+# reboot. The lock is the kernel's, so there is no lock file to leave behind and none to
+# judge stale -- a hand-broken lock file cannot be made correct in POSIX sh, because
+# inspecting it and breaking it are two steps.
+python3 - "$HOME/.claude/bin/claude-ssh-agent" <<'PYEOF'
+import re, sys
+text = open(sys.argv[1]).read()
+assert re.search(r'^exec 9>"\$LOCK"$', text, re.M), "the lock must be held on a descriptor"
+assert re.search(r'^if ! lockf -s -t \d+ 9; then$', text, re.M), "lockf must take the lock, with a timeout"
+for hand_rolled in ('mkdir "$LOCK"', 'rm -rf "$LOCK"', '$LOCK/pid'):
+    assert hand_rolled not in text, f"lock state that has to be judged stale: {hand_rolled}"
+PYEOF
+
+# The agent must not inherit the lock descriptor. A BSD flock lives as long as any
+# descriptor on the open file and the agent is meant to stay up indefinitely, so
+# inheriting it would hold the lock forever -- every later session would wait the full
+# timeout and then start with no agent, which is worse than the bug being fixed here.
+python3 - "$HOME/.claude/bin/claude-ssh-agent" <<'PYEOF'
+import re, sys
+text = open(sys.argv[1]).read()
+m = re.search(r'^ssh-agent -a "\$SOCK".*$', text, re.M)
+assert m, "no ssh-agent invocation found"
+assert '9>&-' in m.group(0), "the agent must be spawned with the lock descriptor closed"
+PYEOF
+
+# A run that cannot take the lock waits rather than skipping the load: a session that
+# gave up would have no agent at all, and every commit in it would fail.
+holder_lock="$HOME/.claude/run/agent.lock"
+mkdir -p "$HOME/.claude/run"
+# 9>&- on the sleep for the same reason the loader closes it for the agent: a child
+# holding the descriptor would keep the lock after this holder is killed.
+sh -c 'exec 9>"$1"; lockf -s -t 5 9 || exit 1; while :; do sleep 1 9>&-; done' -- "$holder_lock" &
+holder=$!
+sleep 1
+"$HOME/.claude/bin/claude-ssh-agent" >/dev/null 2>&1 &
+waiter=$!
+sleep 3
+if ! kill -0 "$waiter" 2>/dev/null; then
+  echo "loader did not wait for a held lock" >&2; exit 1
+fi
+kill "$waiter" 2>/dev/null || true
+wait "$waiter" 2>/dev/null || true
+kill "$holder" 2>/dev/null || true
+wait "$holder" 2>/dev/null || true
+
+# And a run that finishes must leave the lock free, however it finished -- this one dies
+# at the refusing `op`, well past where the lock is taken.
+"$HOME/.claude/bin/claude-ssh-agent" >/dev/null 2>&1 || true
+if ! sh -c 'exec 9>"$1"; lockf -s -t 1 9' -- "$holder_lock"; then
+  echo "loader held its lock past exit" >&2; exit 1
+fi
+
 # A half-successful provisioning run must not leave a mixed generation on disk: the
 # activation guard only tests that both files exist, so a new signing key beside the
 # previous auth key would look complete and would fail every push after a rotation.
