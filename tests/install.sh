@@ -400,8 +400,8 @@ if [ -e "$HOME/.claude/run/agent.lock" ]; then
   echo "loader left its lock behind after failing" >&2; exit 1
 fi
 
-# A lock whose owner died -- killed between the mkdir and the trap -- must not wedge
-# every future session. A pid that cannot be signalled is the tell.
+# A lock whose owner was killed after writing its pid must not wedge every future
+# session. A pid that cannot be signalled is the tell.
 mkdir -p "$HOME/.claude/run/agent.lock"
 dead="$(bash -c 'echo $$')"
 while kill -0 "$dead" 2>/dev/null; do dead=$((dead + 1)); done
@@ -411,10 +411,37 @@ if [ -e "$HOME/.claude/run/agent.lock" ]; then
   echo "loader did not break a stale lock" >&2; exit 1
 fi
 
-# A lock a live process holds must make the next run wait, not skip the load: a session
-# that gave up would have no agent at all, and every commit in it would fail.
+# A lock whose owner died in the other window -- between its mkdir and the pid write --
+# carries no pid at all. That is indistinguishable from a holder still inside that
+# window, so it may only be broken after the wait has gone on long enough to rule the
+# second out.
+mkdir -p "$HOME/.claude/run/agent.lock"
+"$HOME/.claude/bin/claude-ssh-agent" >/dev/null 2>&1 || true
+if [ -e "$HOME/.claude/run/agent.lock" ]; then
+  echo "loader did not break a stale lock carrying no pid" >&2; exit 1
+fi
+
+# A live pid whose process is not this script must not hold the lock either: pids wrap,
+# and a stale lock sitting for hours can end up naming something unrelated.
 mkdir -p "$HOME/.claude/run/agent.lock"
 echo $$ > "$HOME/.claude/run/agent.lock/pid"
+"$HOME/.claude/bin/claude-ssh-agent" >/dev/null 2>&1 || true
+if [ -e "$HOME/.claude/run/agent.lock" ]; then
+  echo "loader treated an unrelated live pid as the lock owner" >&2; exit 1
+fi
+
+# A lock a running loader holds must make the next run wait, not skip the load: a
+# session that gave up would have no agent at all, and every commit in it would fail.
+# The holder has to look like this script to `ps`, which is what the check above tests.
+cat > "$TEST_DIR/bin/claude-ssh-agent-holder" <<'HOLDEOF'
+#!/usr/bin/env bash
+sleep 60
+HOLDEOF
+chmod +x "$TEST_DIR/bin/claude-ssh-agent-holder"
+"$TEST_DIR/bin/claude-ssh-agent-holder" &
+holder=$!
+mkdir -p "$HOME/.claude/run/agent.lock"
+echo "$holder" > "$HOME/.claude/run/agent.lock/pid"
 "$HOME/.claude/bin/claude-ssh-agent" >/dev/null 2>&1 &
 waiter=$!
 sleep 3
@@ -423,7 +450,29 @@ if ! kill -0 "$waiter" 2>/dev/null; then
 fi
 kill "$waiter" 2>/dev/null || true
 wait "$waiter" 2>/dev/null || true
+kill "$holder" 2>/dev/null || true
+wait "$holder" 2>/dev/null || true
 rm -rf "$HOME/.claude/run/agent.lock"
+
+# Breaking a stale lock must be atomic. `rm -rf` then `mkdir` lets two waiters that both
+# judged it stale each believe they won -- and both rebuild.
+python3 - "$HOME/.claude/bin/claude-ssh-agent" <<'PYEOF'
+import re, sys
+text = open(sys.argv[1]).read()
+body = text[text.index('until mkdir "$LOCK"'):text.index("\ntrap '")]
+assert re.search(r'mv "\$LOCK" "\$LOCK\.stale', body), "stale locks must be broken by rename"
+assert 'rm -rf "$LOCK"\n' not in body, "a bare rm -rf of the live lock is not atomic"
+PYEOF
+
+# A trap that does not exit returns to the script: a holder signalled by pid would drop
+# the lock and keep rebuilding without it.
+python3 - "$HOME/.claude/bin/claude-ssh-agent" <<'PYEOF'
+import re, sys
+text = open(sys.argv[1]).read()
+m = re.search(r"^trap '([^']*)' INT TERM$", text, re.M)
+assert m, "INT and TERM need a handler of their own"
+assert 'exit' in m.group(1), "the INT/TERM handler must exit rather than resume"
+PYEOF
 
 # Unlinking the socket leaves the agent behind it running, with both keys in memory and
 # nothing able to reach or kill it. The sweep has to come before the replacement starts,
