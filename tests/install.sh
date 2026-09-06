@@ -435,7 +435,10 @@ fi
 # The holder has to look like this script to `ps`, which is what the check above tests.
 cat > "$TEST_DIR/bin/claude-ssh-agent-holder" <<'HOLDEOF'
 #!/usr/bin/env bash
-sleep 60
+# Not `exec sleep`: the loader identifies a lock's owner by command line, so the holder
+# has to keep one that names this script. Short sleeps so the child orphaned when the
+# wrapper is killed outlives the suite by a second rather than a minute.
+while :; do sleep 1; done
 HOLDEOF
 chmod +x "$TEST_DIR/bin/claude-ssh-agent-holder"
 "$TEST_DIR/bin/claude-ssh-agent-holder" &
