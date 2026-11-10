@@ -55,6 +55,17 @@ repository's `AGENTS.md`.
     commits fail with `Couldn't find key in agent?`. And `gpg.ssh.allowedSignersFile`
     must list `<principal> <keytype> <key>` — omit the key type and verification
     fails while signing still appears to work.
+- **Explicit per-agent Git readers** are provisioned with
+  `agents/git/install.py`. When installed, use that agent's
+  `~/.claude/agent-git/gitconfig` or `~/.codex/agent-git/gitconfig`, its
+  fixed socket, distinct key pair and read-only 1Password service account.
+  The provider environment is activated only after public-key registration,
+  a cold load, signed commit, authenticated push and recovery checks.
+  Unattended loaders never fall back to the operator session. Do not redirect
+  an installed reader through repository environment settings or force the
+  legacy Claude configuration into Codex. The legacy setup described above
+  remains for machines that have not completed this explicit cutover.
+  Separate cloud reader grants do not isolate processes sharing one Unix user.
 - `main` is protected: no direct pushes, no force pushes, linear history.
   Every change lands through a pull request.
 - Branch names: `<agent>/<topic>` for agent work (`claude/...`,

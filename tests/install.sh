@@ -667,4 +667,12 @@ case "$out" in
   *"cannot read op://"*) echo "loader did not fall back past the service-account token" >&2; exit 1 ;;
 esac
 
+# An explicitly migrated reader must survive ordinary shell-installer updates.
+mkdir -p "$HOME/.claude/agent-git"
+printf '{"schema":1}\n' > "$HOME/.claude/agent-git/identity.json"
+printf '{"env":{"GIT_CONFIG_GLOBAL":"retained-explicit-reader"},"theme":"retained"}\n' > "$HOME/.claude/settings.json"
+cp "$HOME/.claude/settings.json" "$TEST_DIR/explicit-settings"
+"$ROOT_DIR/install.sh" >/dev/null
+cmp "$HOME/.claude/settings.json" "$TEST_DIR/explicit-settings"
+
 printf 'install tests passed\n'

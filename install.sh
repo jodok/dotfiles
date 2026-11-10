@@ -202,6 +202,10 @@ backup_file() {
 # is read from 1Password at install time, and the private halves are only ever
 # streamed into an ssh-agent by claude-ssh-agent.
 install_claude_git_identity() {
+  if [ -f "$HOME/.claude/agent-git/identity.json" ]; then
+    log "explicit Claude Git reader installed; preserving its binding (agents/git/install.py)"
+    return
+  fi
   # An ordinary run must not silently re-point a non-default vault at Private. The
   # loader is rewritten before the op guard below, so a run without CLAUDE_OP_VAULT
   # would rebake it while the public keys from the other vault stay in place -- working
@@ -331,6 +335,10 @@ install_claude_git_identity() {
 # merges into it and never rewrites it. Idempotent: re-running replaces only our own
 # SessionStart hook, and only the surrounding entry if that hook was all it held.
 install_claude_settings() {
+  if [ -f "$HOME/.claude/agent-git/identity.json" ]; then
+    log "explicit Claude Git environment installed; preserving its settings"
+    return
+  fi
   local settings="$HOME/.claude/settings.json"
   # Only switch git over once the identity actually exists. The config it selects sets
   # commit.gpgsign and a signing key; without the key every commit fails, which would

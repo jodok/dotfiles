@@ -130,3 +130,65 @@ Optional local files stay outside git:
   startup.
 - Uses standard oh-my-zsh auto-loading for `custom/*.zsh`.
 - Secrets do not belong in this repo.
+
+## Separate agent Git readers
+
+The existing shell installer remains compatible with the legacy Claude setup.
+An explicit reader cutover uses `agents/git/install.py` with Python 3.11+ and
+exact IDs. Provision the two shared vaults and read-only service accounts first:
+`agent-git-claude` contains only Claude's pair; `agent-git-codex` contains a
+separate Codex pair. Neither service account needs Fleet/runtime credentials or
+access to the other vault. Keep token recovery with the independent operator.
+
+```sh
+python3 agents/git/install.py --agent codex \
+  --account ACCOUNT_ID --principal SERVICE_ACCOUNT_ID --vault VAULT_ID \
+  --signing-item SIGNING_ITEM_ID --auth-item AUTH_ITEM_ID
+```
+
+Supply that identity's `OP_SERVICE_ACCOUNT_TOKEN` through the existing secure
+provisioning environment. Never paste its value into the command, source tree
+or terminal output. This command checks the account/principal and public pair,
+then installs files under `~/.codex/agent-git/` (or `~/.claude/agent-git/`). It
+does not change the provider configuration until explicitly called with
+`--activate`. Repeating the same installation is safe; changing a pinned reader
+or pair requires a separately reviewed rotation/cutover.
+
+Each agent gets an independent fixed socket, SSH transport, signing shim and
+Git config. The wrappers use an absolute Python path with isolated mode and
+system SSH tools. The loader only reads the two pinned item IDs under its
+pinned service account. It never retries as the operator or chooses a different
+vault from repository environment variables. Private keys stream from
+1Password to `ssh-add` without touching disk. A warm socket avoids repeated
+reads but is not proof that a token still works; acceptance must use a cold
+socket with the desktop/operator session unavailable. This is cloud reader
+separation, not Unix process isolation: agents sharing one local user can still
+reach each other's user-owned sockets and files.
+
+Register the distinct public keys on GitHub, cold-load both identities, verify
+signatures, and test authenticated pushes on disposable task branches **before
+activation or retirement**. The installer itself cannot establish GitHub key
+registration. Preserve the old working loader/token until these tests and
+independent recovery succeed. Do not archive old key items and call their
+access revoked; verify the source copies and old broad credentials can no
+longer be read. A still-loaded SSH key is not revoked by revoking a vault token.
+
+`--activate` changes only the agent's Git/token environment. Claude's settings
+and user hooks are preserved; its recorded old loader hook is replaced. Codex's
+TOML is parsed before and after the edit and unrelated settings are preserved.
+Restrictive environment filters or unsupported configuration forms require an
+explicit review rather than widening them. Codex uses the documented
+[`shell_environment_policy.set`](https://learn.chatgpt.com/docs/config-file/config-reference)
+keys; inclusion filters may otherwise remove those variables. New sessions must
+be started to receive the changed environment. Signing and transport wrappers
+cold-load on demand, so Codex needs no invented startup hook.
+
+Ordinary `install.sh` runs preserve a reader installed this way, including its
+provider settings. Update an explicit reader with this script and the same
+verified IDs; the legacy installer does not silently replace it. No change is
+made to personal shell Git/SSH configuration or the other agent's settings.
+
+Run `python3 -m unittest discover -s tests -p 'test_*.py' -v` for hermetic reader
+contracts, including real disposable SSH keys and a verified signed fixture
+commit. These fixtures never contact 1Password or GitHub. The `Tests` CI check
+also retains the existing shell installer/update suites.

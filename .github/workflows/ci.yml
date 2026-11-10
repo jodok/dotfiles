@@ -1,0 +1,27 @@
+name: Checks
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install shell test prerequisite
+        run: sudo apt-get update && sudo apt-get install -y zsh
+      - name: Check shell syntax
+        run: bash -n install.sh update.sh tests/install.sh tests/update.sh tests/update-check.sh
+      - name: Test existing installer and updates
+        run: |
+          bash tests/install.sh
+          bash tests/update.sh
+          bash tests/update-check.sh
+      - name: Test explicit agent readers and real SSH signing
+        run: python3 -m unittest discover -s tests -p 'test_*.py' -v
