@@ -153,6 +153,9 @@ then installs files under `~/.codex/agent-git/` (or `~/.claude/agent-git/`). It
 does not change the provider configuration until explicitly called with
 `--activate`. Repeating the same installation is safe; changing a pinned reader
 or pair requires a separately reviewed rotation/cutover.
+After a tool upgrade, repeat the same command with `--refresh-tools` to refresh
+resolved executable paths. This still verifies the same service account, vault,
+item IDs and public keys; it does not activate or rotate the reader.
 
 Each agent gets an independent fixed socket, SSH transport, signing shim and
 Git config. The wrappers use an absolute Python path with isolated mode and

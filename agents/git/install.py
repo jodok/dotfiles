@@ -62,7 +62,7 @@ def read_pair(account,principal,vault,items):
     return [public(op('read',f'op://{vault}/{item}/public key')) for item in items]
 
 
-def install(home,agent,account,principal,vault,items,keys,programs):
+def install(home,agent,account,principal,vault,items,keys,programs,refresh_tools=False):
     home=Path(home).resolve()
     root=home/('.'+agent)/'agent-git'
     for parent in (home/('.'+agent),root):
@@ -85,7 +85,11 @@ def install(home,agent,account,principal,vault,items,keys,programs):
              item_ids=items,public_keys=keys,programs=programs)
     # Avoid replacing a configured reader with a different one as an implicit update.
     existing=checked(root/'identity.json')
-    if existing and json.loads(existing)!=cfg:raise ValueError('existing identity differs; review a separate rotation/cutover')
+    if existing:
+        prior=json.loads(existing)
+        expected=dict(cfg)
+        if refresh_tools:expected['programs']=prior.get('programs')
+        if prior!=expected:raise ValueError('existing identity differs; review a separate rotation/cutover')
     invocation=shlex.quote(programs['python'])+' -I '+shlex.quote(str(root/'loader.py'))
     contents={
         'identity.json':json.dumps(cfg,indent=2,sort_keys=True)+'\n',
@@ -135,6 +139,7 @@ def codex_settings(text,values):
         for i in range(start,end):
             match=re.match(r'\s*([A-Za-z0-9_]+)\s*=',lines[i])
             if match and match[1] in pending:lines[i]=match[1]+' = '+json.dumps(pending.pop(match[1]))+'\n'
+        if pending and end and not lines[end-1].endswith('\n'):lines[end-1]+='\n'
         lines[end:end]=[k+' = '+json.dumps(v)+'\n' for k,v in pending.items()]
         result=''.join(lines)
     if tomllib.loads(result)!=target:raise ValueError('Codex config changed outside managed values')
@@ -176,6 +181,7 @@ def main():
     p.add_argument('--agent',choices=('claude','codex'),required=True)
     for name in ('account','principal','vault','signing-item','auth-item'):p.add_argument('--'+name,required=True)
     p.add_argument('--activate',action='store_true',help='Update only the agent Git environment after provisioning and verification')
+    p.add_argument('--refresh-tools',action='store_true',help='Refresh executable paths while preserving the pinned reader and keys')
     a=p.parse_args()
     for value in (a.account,a.principal,a.vault,a.signing_item,a.auth_item):
         if not re.fullmatch('[A-Za-z0-9]{26}',value):raise ValueError('identity IDs required')
@@ -183,7 +189,7 @@ def main():
     keys=read_pair(a.account,a.principal,a.vault,items)
     programs={name:program(name) for name in ('op','git','ssh','ssh-keygen','ssh-agent','ssh-add')}
     programs['python']=str(Path(sys.executable).resolve())
-    root=install(Path.home(),a.agent,a.account,a.principal,a.vault,items,keys,programs)
+    root=install(Path.home(),a.agent,a.account,a.principal,a.vault,items,keys,programs,refresh_tools=a.refresh_tools)
     if a.activate:activate(Path.home(),a.agent,root,os.environ['OP_SERVICE_ACCOUNT_TOKEN'])
     print('Installed '+a.agent+' Git identity'+(' and activated its environment.' if a.activate else '; provider environment unchanged.'))
 

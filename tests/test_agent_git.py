@@ -48,6 +48,16 @@ trust_level = "trusted"
                      '[shell_environment_policy]\ninclude_only=["PATH"]'):
             with self.assertRaises(Exception):installer.codex_settings(text,{'GIT_CONFIG_GLOBAL':'new'})
 
+    def test_codex_appends_settings_after_valid_final_line_without_newline(self):
+        values={'GIT_CONFIG_GLOBAL':'fixture','OP_SERVICE_ACCOUNT_TOKEN':'ops_fixture'}
+        for text in ('[shell_environment_policy.set]\nEXISTING = "retained"',
+                     '[shell_environment_policy.set]'):
+            result=installer.codex_settings(text,values)
+            expected=tomllib.loads(text)
+            expected['shell_environment_policy']['set'].update(values)
+            self.assertEqual(tomllib.loads(result),expected)
+            self.assertEqual(installer.codex_settings(result,values),result)
+
     def test_write_is_private_atomic_and_refuses_symlinks(self):
         with tempfile.TemporaryDirectory() as folder:
             target=Path(folder)/'private/config'
@@ -146,6 +156,18 @@ else:sys.exit(1)
         verified=subprocess.run(['git','verify-commit','HEAD'],cwd=repo,env=ctx,capture_output=True)
         self.assertEqual(verified.returncode,0,verified.stderr)
         self.assertFalse((root/'run/agent.sock').exists())
+
+    def test_explicit_tool_refresh_preserves_identity_and_rejects_rebinding(self):
+        root=self.install()
+        changed=dict(self.programs,op='/updated/op')
+        before=json.loads((root/'identity.json').read_text())
+        with self.assertRaises(ValueError):
+            installer.install(self.home,'codex',A,P,V,ITEMS,self.keys[:2],changed)
+        installer.install(self.home,'codex',A,P,V,ITEMS,self.keys[:2],changed,refresh_tools=True)
+        expected=dict(before,programs=changed)
+        self.assertEqual(json.loads((root/'identity.json').read_text()),expected)
+        with self.assertRaises(ValueError):
+            installer.install(self.home,'codex',A,'z'*26,V,ITEMS,self.keys[:2],changed,refresh_tools=True)
 
     def test_legacy_claude_pair_cannot_be_reused_by_codex(self):
         legacy=self.home/'.claude';legacy.mkdir()
