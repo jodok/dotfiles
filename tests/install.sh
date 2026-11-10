@@ -75,6 +75,9 @@ chmod +x "$TEST_DIR/bin/curl"
 export DOTFILES_TEST_ROOT="$ROOT_DIR"
 export HOME="$TEST_DIR/home"
 export PATH="$TEST_DIR/bin:$PATH"
+# The runner may set XDG_CONFIG_HOME outside the fixture HOME. Test the default
+# first; the explicit XDG override cases below set their own isolated path.
+unset XDG_CONFIG_HOME
 
 # A refusing `op` from the very first line, before any install runs. Without it the
 # early installs reach whatever `op` the machine has, and on a box where 1Password is
