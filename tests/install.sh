@@ -75,6 +75,9 @@ chmod +x "$TEST_DIR/bin/curl"
 export DOTFILES_TEST_ROOT="$ROOT_DIR"
 export HOME="$TEST_DIR/home"
 export PATH="$TEST_DIR/bin:$PATH"
+# The runner may set XDG_CONFIG_HOME outside the fixture HOME. Test the default
+# first; the explicit XDG override cases below set their own isolated path.
+unset XDG_CONFIG_HOME
 
 # A refusing `op` from the very first line, before any install runs. Without it the
 # early installs reach whatever `op` the machine has, and on a box where 1Password is
@@ -666,5 +669,13 @@ out="$(OP_SERVICE_ACCOUNT_TOKEN=ops_pretend "$HOME/.claude/bin/claude-ssh-agent"
 case "$out" in
   *"cannot read op://"*) echo "loader did not fall back past the service-account token" >&2; exit 1 ;;
 esac
+
+# An explicitly migrated reader must survive ordinary shell-installer updates.
+mkdir -p "$HOME/.claude/agent-git"
+printf '{"schema":1}\n' > "$HOME/.claude/agent-git/identity.json"
+printf '{"env":{"GIT_CONFIG_GLOBAL":"retained-explicit-reader"},"theme":"retained"}\n' > "$HOME/.claude/settings.json"
+cp "$HOME/.claude/settings.json" "$TEST_DIR/explicit-settings"
+"$ROOT_DIR/install.sh" >/dev/null
+cmp "$HOME/.claude/settings.json" "$TEST_DIR/explicit-settings"
 
 printf 'install tests passed\n'
