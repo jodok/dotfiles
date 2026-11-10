@@ -191,4 +191,6 @@ made to personal shell Git/SSH configuration or the other agent's settings.
 Run `python3 -m unittest discover -s tests -p 'test_*.py' -v` for hermetic reader
 contracts, including real disposable SSH keys and a verified signed fixture
 commit. These fixtures never contact 1Password or GitHub. The `Tests` CI check
-also retains the existing shell installer/update suites.
+runs the existing shell installer/update suites with native BSD locking on
+macOS and the new reader contracts on both macOS and Linux. Both platform
+results must succeed; skipped, failed or cancelled results fail the aggregate.

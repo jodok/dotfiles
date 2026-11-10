@@ -6,22 +6,42 @@ on:
 permissions:
   contents: read
 jobs:
-  tests:
-    name: Tests
-    runs-on: ubuntu-latest
+  macos:
+    name: macOS installer and readers
+    runs-on: macos-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Install shell test prerequisite
-        run: sudo apt-get update && sudo apt-get install -y zsh
       - name: Check shell syntax
         run: bash -n install.sh update.sh tests/install.sh tests/update.sh tests/update-check.sh
-      - name: Test existing installer and updates
+      - name: Test existing installer and updates with native BSD locking
         run: |
           bash -x tests/install.sh > "$RUNNER_TEMP/install-contract.log" 2>&1 || { tail -100 "$RUNNER_TEMP/install-contract.log"; exit 1; }
           bash tests/update.sh
           bash tests/update-check.sh
       - name: Test explicit agent readers and real SSH signing
         run: python3 -m unittest discover -s tests -p 'test_*.py' -v
+  linux:
+    name: Linux reader contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Test explicit agent readers and real SSH signing
+        run: python3 -m unittest discover -s tests -p 'test_*.py' -v
+  tests:
+    name: Tests
+    if: always()
+    needs: [macos, linux]
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Require both supported platform checks
+        env:
+          MACOS: ${{ needs.macos.result }}
+          LINUX: ${{ needs.linux.result }}
+        run: test "$MACOS" = success && test "$LINUX" = success
