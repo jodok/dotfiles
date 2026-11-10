@@ -20,7 +20,7 @@ jobs:
         run: bash -n install.sh update.sh tests/install.sh tests/update.sh tests/update-check.sh
       - name: Test existing installer and updates
         run: |
-          bash tests/install.sh
+          bash -x tests/install.sh > "$RUNNER_TEMP/install-contract.log" 2>&1 || { tail -100 "$RUNNER_TEMP/install-contract.log"; exit 1; }
           bash tests/update.sh
           bash tests/update-check.sh
       - name: Test explicit agent readers and real SSH signing
