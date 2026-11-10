@@ -101,9 +101,15 @@ def ensure(root):
 
 
 def main():
-    cfg,env=ensure(Path(__file__).resolve().parent)
-    env.pop('OP_SERVICE_ACCOUNT_TOKEN',None)
+    root=Path(__file__).resolve().parent
     mode=sys.argv[1:2]
+    if mode==['--sign'] and sys.argv[2:4] in (['-Y','find-principals'],['-Y','verify'],['-Y','check-novalidate']):
+        cfg=json.loads((root/'identity.json').read_text())
+        env=environment('',root/'run/agent.sock')
+        env.pop('OP_SERVICE_ACCOUNT_TOKEN',None)
+        os.execve(cfg['programs']['ssh-keygen'],[cfg['programs']['ssh-keygen'],*sys.argv[2:]],env)
+    cfg,env=ensure(root)
+    env.pop('OP_SERVICE_ACCOUNT_TOKEN',None)
     if mode==['--load'] and len(sys.argv)==2:return 0
     if mode==['--sign']:
         os.execve(cfg['programs']['ssh-keygen'],[cfg['programs']['ssh-keygen'],*sys.argv[2:]],env)

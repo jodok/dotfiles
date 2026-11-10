@@ -10,6 +10,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 import tomllib
 import unittest
 from unittest.mock import patch
@@ -107,7 +108,7 @@ else:sys.exit(1)
 
     def install(self,agent='codex'):
         chosen=0 if agent=='codex' else 2
-        root=installer.install(self.home,agent,A,P,V,(ITEMS+OTHER_ITEMS)[chosen:chosen+2],self.keys[chosen:chosen+2],self.programs)
+        root=installer.install(self.home,agent,A,P if agent=='codex' else 'q'*26,V if agent=='codex' else 'w'*26,(ITEMS+OTHER_ITEMS)[chosen:chosen+2],self.keys[chosen:chosen+2],self.programs)
         if root not in self.roots:self.roots.append(root)
         return root
 
@@ -117,6 +118,8 @@ else:sys.exit(1)
         with self.assertRaises(ValueError):installer.install(self.home,'codex',A,'z'*26,V,ITEMS,self.keys[:2],self.programs)
         with self.assertRaisesRegex(ValueError,'another agent'):
             installer.install(self.home,'claude',A,P,V,ITEMS,self.keys[:2],self.programs)
+        with self.assertRaisesRegex(ValueError,'distinct service'):
+            installer.install(self.home,'claude',A,P,V,OTHER_ITEMS,self.keys[2:],self.programs)
         other=self.install('claude')
         self.assertNotEqual(root,other)
         self.assertIn(str(other/'run/agent.sock'),(other/'ssh_config').read_text())
@@ -135,6 +138,26 @@ else:sys.exit(1)
         subprocess.run(['git','commit','-q','--allow-empty','-m','test: disposable signing fixture'],cwd=repo,env=ctx,check=True,capture_output=True)
         verified=subprocess.run(['git','verify-commit','HEAD'],cwd=repo,env=ctx,capture_output=True)
         self.assertEqual(verified.returncode,0)
+        os.kill(int((root/'run/agent.pid').read_text()),signal.SIGTERM)
+        for _ in range(100):
+            if not (root/'run/agent.sock').exists():break
+            time.sleep(0.01)
+        ctx.pop('OP_SERVICE_ACCOUNT_TOKEN',None)
+        verified=subprocess.run(['git','verify-commit','HEAD'],cwd=repo,env=ctx,capture_output=True)
+        self.assertEqual(verified.returncode,0,verified.stderr)
+        self.assertFalse((root/'run/agent.sock').exists())
+
+    def test_legacy_claude_pair_cannot_be_reused_by_codex(self):
+        legacy=self.home/'.claude';legacy.mkdir()
+        (legacy/'claude-signing.pub').write_text(self.keys[0]+'\n')
+        (legacy/'claude-auth.pub').write_text(self.keys[1]+'\n')
+        with self.assertRaisesRegex(ValueError,'legacy Claude'):
+            self.install()
+        root=installer.install(self.home,'codex',A,P,V,OTHER_ITEMS,self.keys[2:],self.programs)
+        self.roots.append(root)
+        # Claude is allowed to preserve its own registered pair.
+        own=installer.install(self.home,'claude',A,'q'*26,'w'*26,ITEMS,self.keys[:2],self.programs)
+        self.roots.append(own)
 
     def test_cold_invalid_token_fails_without_socket_or_secret_logs(self):
         root=self.install()

@@ -68,10 +68,19 @@ def install(home,agent,account,principal,vault,items,keys,programs):
     for parent in (home/('.'+agent),root):
         if parent.is_symlink():raise ValueError('refusing symlink identity directory')
     if len(set(keys))!=2:raise ValueError('authentication and signing keys must differ')
+    if agent=='codex':
+        legacy=set()
+        for name in ('claude-signing.pub','claude-auth.pub'):
+            text=checked(home/'.claude'/name)
+            if text:legacy.add(public(text))
+        if legacy & set(keys):raise ValueError('Codex must not reuse the legacy Claude pair')
     other=home/('.'+('codex' if agent=='claude' else 'claude'))/'agent-git/identity.json'
     other_cfg=checked(other)
-    if other_cfg and set(json.loads(other_cfg)['public_keys']) & set(keys):
-        raise ValueError('another agent already uses one of these keys')
+    if other_cfg:
+        other_cfg=json.loads(other_cfg)
+        if set(other_cfg['public_keys']) & set(keys):raise ValueError('another agent already uses one of these keys')
+        if other_cfg['account_id']==account and (other_cfg['principal_id']==principal or other_cfg['vault_id']==vault):
+            raise ValueError('agents require distinct service accounts and vaults')
     cfg=dict(schema=1,agent=agent,account_id=account,principal_id=principal,vault_id=vault,
              item_ids=items,public_keys=keys,programs=programs)
     # Avoid replacing a configured reader with a different one as an implicit update.
