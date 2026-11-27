@@ -12,6 +12,13 @@ Keep this file limited to reusable personal defaults. Repository architecture,
 commands, lifecycle, review gates, and deployment policy belong in that
 repository's `AGENTS.md`.
 
+## Code language
+
+Always write code in English, including variable names, other identifiers,
+comments, tests, and code examples in documentation and chat. This applies
+even when the conversation is in another language. Preserve literal names
+required by external APIs, file formats, and source data.
+
 ## Git and pull requests
 
 - Author every commit as `Jodok Batlogg <jodok@batlogg.com>`. Agents and
